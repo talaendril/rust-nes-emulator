@@ -65,7 +65,7 @@ pub struct CPU {
     memory: [u8; MEMORY_LENGTH],
 }
 
-trait Mem {
+pub trait Mem {
     fn mem_read(&self, addr: u16) -> u8;
 
     fn mem_write(&mut self, addr: u16, data: u8);
@@ -171,11 +171,20 @@ impl CPU {
         self.run()
     }
 
-    /// Get the instruction opcode from memory and exectute accordingly.
     pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    /// Get the instruction opcode from memory and exectute accordingly.
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
         let opcodes = &(*opcode::OPCODES_MAP);
 
         loop {
+            callback(self);
+
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
             let program_counter_state = self.program_counter;
