@@ -43,7 +43,7 @@ bitflags! {
 // stack typically starts at 0x0100 and ends at 0x01FF and lives in the 0th page
 const STACK_RESET: u8 = 0xFF;
 const STACK: u16 = 0x0100;
-const PROGRAM_START_ADDR: u16 = 0x8000;
+const PROGRAM_START_ADDR: u16 = 0x0600; // TODO: changed from 0x8000 to 0x0600 to work
 const PROGRAM_INIT_ADDR: u16 = 0xFFFC;
 const MEMORY_LENGTH: usize = 0xFFFF;
 
@@ -74,6 +74,7 @@ pub trait Mem {
     fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos);
         let hi = self.mem_read(pos + 1);
+
         u16::from_le_bytes([lo, hi])
     }
 
@@ -726,7 +727,6 @@ impl CPU {
     /// Push address - 1 of return point onto stack and set program counter to target address.
     fn jsr(&mut self, op_code: &OpCode) {
         let addr = self.get_operand_address(&op_code.addressing_mode);
-
         self.push_to_stack_u16(self.program_counter + (op_code.bytes as u16 - 1) - 1);
         self.program_counter = addr;
     }
