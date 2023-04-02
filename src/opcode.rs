@@ -80,6 +80,7 @@ pub enum AddressingMode {
     Implied,
 }
 
+#[derive(Debug)]
 pub struct OpCode {
     pub code: u8,
     pub mnemonic: Mnemonic,

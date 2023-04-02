@@ -41,7 +41,7 @@ bitflags! {
 
 // reference: https://chubakbidpaa.com/retro/2020/12/15/6502-stack-copy.html
 // stack typically starts at 0x0100 and ends at 0x01FF and lives in the 0th page
-const STACK_RESET: u8 = 0xFF;
+const STACK_RESET: u8 = 0xFD; // TODO: changed from 0xFF to 0xFD like guide
 const STACK: u16 = 0x0100;
 const PROGRAM_START_ADDR: u16 = 0x0600; // TODO: changed from 0x8000 to 0x0600 to work
 const PROGRAM_INIT_ADDR: u16 = 0xFFFC;
@@ -311,9 +311,9 @@ impl CPU {
             }
             AddressingMode::IndirectX => {
                 let base = self.mem_read(self.program_counter);
-                let ptr = base.wrapping_add(self.register_x) as u16;
-                let lo = self.mem_read(ptr);
-                let hi = self.mem_read(ptr.wrapping_add(1));
+                let ptr = base.wrapping_add(self.register_x);
+                let lo = self.mem_read(ptr as u16);
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
                 u16::from_le_bytes([lo, hi])
             }
             AddressingMode::IndirectY => {
@@ -470,11 +470,6 @@ impl CPU {
     }
 
     /// Decrements the value store in register x
-    /// My plan was to use somthing like this but it didn't fully work:
-    ///
-    /// `fn decxy<G, S>(&mut self, get: G, set: S) where G: Fn() -> u8, S: Fn(u8), {}`
-    ///
-    /// TODO: just remember it
     fn dex(&mut self) {
         self.register_x = self.register_x.wrapping_sub(1);
 
@@ -786,7 +781,8 @@ impl CPU {
         let value = self.mem_read(addr);
 
         self.status.set(CpuFlags::CARRY, compare_to >= value);
-        self.status.set(CpuFlags::ZERO, compare_to == value);
+        // self.status.set(CpuFlags::ZERO, compare_to == value);
+        self.set_zero_flag_with(compare_to.wrapping_sub(value));
         self.set_negative_flag_with(compare_to.wrapping_sub(value));
     }
 }

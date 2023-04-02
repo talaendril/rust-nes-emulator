@@ -1,4 +1,5 @@
 {
   "editor.defaultFormatter": "rust-lang.rust-analyzer",
-  "rust-analyzer.check.command": "clippy"
+  "rust-analyzer.check.command": "clippy",
+  "files.eol": "\n"
 }
