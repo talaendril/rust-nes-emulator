@@ -14,17 +14,17 @@ use bitflags::bitflags;
 use crate::opcode::{self, AddressingMode, Mnemonic, OpCode};
 
 bitflags! {
-    /// # Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
+    /// ### Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
     ///
-    ///  7 6 5 4 3 2 1 0
-    ///  N V _ B D I Z C
-    ///  | |   | | | | +--- Carry Flag
-    ///  | |   | | | +----- Zero Flag
-    ///  | |   | | +------- Interrupt Disable
-    ///  | |   | +--------- Decimal Mode (not used on NES)
-    ///  | |   +----------- Break Command
-    ///  | +--------------- Overflow Flag
-    ///  +----------------- Negative Flag
+    ///  7 6 5 4 3 2 1 0 <br>
+    ///  N V _ B D I Z C <br>
+    ///  | |   | | | | +--- Carry Flag <br>
+    ///  | |   | | | +----- Zero Flag <br>
+    ///  | |   | | +------- Interrupt Disable <br>
+    ///  | |   | +--------- Decimal Mode (not used on NES) <br>
+    ///  | |   +----------- Break Command <br>
+    ///  | +--------------- Overflow Flag <br>
+    ///  +----------------- Negative Flag <br>
     ///
     #[derive(Clone)]
     pub struct CpuFlags: u8 {
@@ -166,13 +166,10 @@ impl CPU {
     }
 
     /// Calls the load function, then resets the cpu state and afterwards executes the loaded program.
-    pub fn load_and_run(&mut self, program: Vec<u8>) {
+    /// TODO: prefixed with underscore because unused outside of tests
+    pub fn _load_and_run(&mut self, program: Vec<u8>) {
         self.load(program);
         self.reset();
-        self.run()
-    }
-
-    pub fn run(&mut self) {
         self.run_with_callback(|_| {});
     }
 
@@ -794,7 +791,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x05, 0x00]);
+        cpu._load_and_run(vec![0xa9, 0x05, 0x00]);
 
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
         assert!(cpu.status.bits() & 0b1000_0000 == 0);
@@ -803,7 +800,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_zero_flag() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x00, 0x00]);
+        cpu._load_and_run(vec![0xa9, 0x00, 0x00]);
 
         assert!(cpu.status.bits() & 0b0000_0010 == 0b10);
     }
@@ -814,7 +811,7 @@ mod test {
         let data = 0x55;
         cpu.mem_write(0x10, data);
 
-        cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
+        cpu._load_and_run(vec![0xa5, 0x10, 0x00]);
 
         assert_eq!(cpu.register_a, data);
     }
@@ -823,7 +820,7 @@ mod test {
     fn test_0xaa_tax_transfer_data() {
         let mut cpu = CPU::new();
         let test_value = 5;
-        cpu.load_and_run(vec![0xa9, test_value, 0xaa, 0x00]);
+        cpu._load_and_run(vec![0xa9, test_value, 0xaa, 0x00]);
 
         assert!(cpu.register_x == test_value);
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
@@ -833,7 +830,7 @@ mod test {
     #[test]
     fn test_5_ops_working_together() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
+        cpu._load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
 
         assert_eq!(cpu.register_x, 0xc1);
     }
@@ -841,7 +838,7 @@ mod test {
     #[test]
     fn test_inx_overflow() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
+        cpu._load_and_run(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
 
         assert_eq!(cpu.register_x, 1);
     }
@@ -852,7 +849,7 @@ mod test {
         let data = 10;
         let addr = 0x0f;
 
-        cpu.load_and_run(vec![0xa9, data, 0x85, addr, 0x00]);
+        cpu._load_and_run(vec![0xa9, data, 0x85, addr, 0x00]);
 
         assert_eq!(cpu.memory[addr as usize], data);
     }

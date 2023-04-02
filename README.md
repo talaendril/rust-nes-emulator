@@ -18,3 +18,8 @@ immediately. The basis of the problem is that SDL2 does not find an _available v
 Input lag might also be a problem with this approach since just funnel the events back to Windows to show UI (I think anyway).
 
 `XDG_RUNTIME_DIR not set in the environment` was also an error thrown during WSL tryouts though that one might be easily fixable.
+
+### Performance
+With the snake example the performance was really bad. The snake needed around 2-3 seconds between moves, I don't think this is
+because of my rust implementation but I am unsure. I ran the guide code as well and the snake needed only around 1 second between 
+moves, so it might just be my implementation. Just writing it down here so I don't forget it...
