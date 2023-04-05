@@ -11,7 +11,10 @@
 
 use bitflags::bitflags;
 
-use crate::opcode::{self, AddressingMode, Mnemonic, OpCode};
+use crate::{
+    bus::Bus,
+    opcode::{self, AddressingMode, Mnemonic, OpCode},
+};
 
 bitflags! {
     /// ### Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
@@ -43,27 +46,8 @@ bitflags! {
 // stack typically starts at 0x0100 and ends at 0x01FF and lives in the 0th page
 const STACK_RESET: u8 = 0xFD; // TODO: changed from 0xFF to 0xFD like guide
 const STACK: u16 = 0x0100;
-const PROGRAM_START_ADDR: u16 = 0x0600; // TODO: changed from 0x8000 to 0x0600 to work
 const PROGRAM_INIT_ADDR: u16 = 0xFFFC;
-const MEMORY_LENGTH: usize = 0xFFFF;
-
-#[allow(clippy::upper_case_acronyms)]
-pub struct CPU {
-    // accumulator
-    pub register_a: u8,
-    // x register
-    pub register_x: u8,
-    // y register
-    pub register_y: u8,
-    // processor status
-    pub status: CpuFlags,
-    // program counter
-    pub program_counter: u16,
-    // stack pointer
-    pub stack_register: u8,
-    // 16 byte memory
-    memory: [u8; MEMORY_LENGTH],
-}
+// const PROGRAM_START_ADDR: u16 = 0x8600;
 
 pub trait Mem {
     fn mem_read(&self, addr: u16) -> u8;
@@ -83,16 +67,6 @@ pub trait Mem {
         let [lo, hi] = data.to_le_bytes();
         self.mem_write(pos, lo);
         self.mem_write(pos + 1, hi);
-    }
-}
-
-impl Mem for CPU {
-    fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
     }
 }
 
@@ -116,6 +90,42 @@ trait Stack {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
+pub struct CPU {
+    // accumulator
+    pub register_a: u8,
+    // x register
+    pub register_x: u8,
+    // y register
+    pub register_y: u8,
+    // processor status
+    pub status: CpuFlags,
+    // program counter
+    pub program_counter: u16,
+    // stack pointer
+    pub stack_register: u8,
+    // memory is accessed via this bus
+    pub bus: Bus,
+}
+
+impl Mem for CPU {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data);
+    }
+
+    fn mem_read_u16(&self, pos: u16) -> u16 {
+        self.bus.mem_read_u16(pos)
+    }
+
+    fn mem_write_u16(&mut self, pos: u16, data: u16) {
+        self.bus.mem_write_u16(pos, data);
+    }
+}
+
 impl Stack for CPU {
     fn push_to_stack(&mut self, value: u8) {
         self.mem_write(STACK + self.stack_register as u16, value);
@@ -131,7 +141,7 @@ impl Stack for CPU {
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(bus: Bus) -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -139,7 +149,7 @@ impl CPU {
             status: CpuFlags::from_bits_truncate(0b100100), // break and interrupt disable should be set
             program_counter: 0,
             stack_register: STACK_RESET,
-            memory: [0; MEMORY_LENGTH],
+            bus,
         }
     }
 
@@ -152,25 +162,11 @@ impl CPU {
         self.stack_register = STACK_RESET;
         self.status = CpuFlags::from_bits_truncate(0b100100);
 
+        // we don't need to actually set the address of the program_counter anymore because the ROM handles that
+        // now I have no idea where the program_counter is actually stored but the guide reads it at 0x8600
+        // the internet says something like this: PC = byte at $FFFD * 256 + byte at $FFFC
+        // reference: https://forums.nesdev.org/viewtopic.php?t=3677
         self.program_counter = self.mem_read_u16(PROGRAM_INIT_ADDR);
-    }
-
-    /// Loads the given program into the correct memory slot and write the start of the program code
-    /// into address 0xFFFC.
-    pub fn load(&mut self, program: Vec<u8>) {
-        // copy program into memory starting at address 0x8000
-        self.memory[PROGRAM_START_ADDR as usize..(PROGRAM_START_ADDR as usize + program.len())]
-            .copy_from_slice(&program[..]);
-        // we put the start of the program ROM code address into 0xFFFC so the reset will always be put towards this value
-        self.mem_write_u16(PROGRAM_INIT_ADDR, PROGRAM_START_ADDR);
-    }
-
-    /// Calls the load function, then resets the cpu state and afterwards executes the loaded program.
-    /// TODO: prefixed with underscore because unused outside of tests
-    pub fn _load_and_run(&mut self, program: Vec<u8>) {
-        self.load(program);
-        self.reset();
-        self.run_with_callback(|_| {});
     }
 
     /// Get the instruction opcode from memory and exectute accordingly.
@@ -269,32 +265,30 @@ impl CPU {
         }
     }
 
-    /// Returns address for a corresponding [`AddressingMode`].
-    /// Address is derived from the [`progam_counter`](CPU) of CPU.
-    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+    pub fn get_absolute_address(&self, mode: &AddressingMode, addr: u16) -> u16 {
         match mode {
-            AddressingMode::Immediate => self.program_counter,
-            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
+            AddressingMode::Immediate => addr,
+            AddressingMode::ZeroPage => self.mem_read(addr) as u16,
             AddressingMode::ZeroPageX => {
-                let pos = self.mem_read(self.program_counter);
+                let pos = self.mem_read(addr);
                 pos.wrapping_add(self.register_x) as u16
             }
             AddressingMode::ZeroPageY => {
-                let pos = self.mem_read(self.program_counter);
+                let pos = self.mem_read(addr);
                 pos.wrapping_add(self.register_y) as u16
             }
-            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+            AddressingMode::Absolute => self.mem_read_u16(addr),
             AddressingMode::AbsoluteX => {
-                let base = self.mem_read_u16(self.program_counter);
+                let base = self.mem_read_u16(addr);
                 base.wrapping_add(self.register_x as u16)
             }
             AddressingMode::AbsoluteY => {
-                let base = self.mem_read_u16(self.program_counter);
+                let base = self.mem_read_u16(addr);
                 base.wrapping_add(self.register_y as u16)
             }
             // JMP is the only instruction to use Indirect AddressingMode in the 6502
             AddressingMode::Indirect => {
-                let base = self.mem_read_u16(self.program_counter);
+                let base = self.mem_read_u16(addr);
                 // http://www.6502.org/tutorials/6502opcodes.html#JMP => an indirect jump must never use a vector beginning on the last byte of a page
                 // Note: 16 bit address space consists of 256 pages of 1 byte memory locations
                 // this means we are on the last byte of a page (0x00FF masking means last byte of this page)
@@ -307,14 +301,14 @@ impl CPU {
                 }
             }
             AddressingMode::IndirectX => {
-                let base = self.mem_read(self.program_counter);
+                let base = self.mem_read(addr);
                 let ptr = base.wrapping_add(self.register_x);
                 let lo = self.mem_read(ptr as u16);
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
                 u16::from_le_bytes([lo, hi])
             }
             AddressingMode::IndirectY => {
-                let base = self.mem_read(self.program_counter);
+                let base = self.mem_read(addr);
                 let lo = self.mem_read(base as u16);
                 let hi = self.mem_read(base.wrapping_add(1) as u16);
                 let deref_base = u16::from_le_bytes([lo, hi]);
@@ -326,6 +320,12 @@ impl CPU {
                 mode
             )
         }
+    }
+
+    /// Returns address for a corresponding [`AddressingMode`].
+    /// Address is derived from the [`progam_counter`](CPU) of CPU.
+    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+        self.get_absolute_address(mode, self.program_counter)
     }
 
     fn get_accumulator_or_memory(&self, mode: &AddressingMode) -> (u8, Option<u16>) {
@@ -447,11 +447,9 @@ impl CPU {
 
         let result = value & self.register_a;
 
-        // TODO: maybe add a set function for other flags as well?
         self.set_zero_flag_with(result);
-        self.set_negative_flag_with(result);
-        self.status
-            .set(CpuFlags::OVERFLOW, result & 0b0100_0000 > 0);
+        self.status.set(CpuFlags::NEGATIV, value & 0b10000000 > 0);
+        self.status.set(CpuFlags::OVERFLOW, value & 0b0100_0000 > 0);
     }
 
     /// Decrements the value stored in memory found with `mode`
@@ -577,7 +575,7 @@ impl CPU {
         let (mut value, addr) = self.get_accumulator_or_memory(mode);
         let saved_carry = self.status.contains(CpuFlags::CARRY);
 
-        if value & 0b0000_0001 == 1 {
+        if value >> 7 == 1 {
             self.status.insert(CpuFlags::CARRY);
         } else {
             self.status.remove(CpuFlags::CARRY);
@@ -710,10 +708,9 @@ impl CPU {
     fn plp(&mut self) {
         // we disregard the bits 5 and 4 (BREAK2 and BREAK) when pulling this value form the stack
         let value = self.pull_from_stack();
-        self.status = CpuFlags::from_bits_truncate(value & 0b1100_1111);
-        // below 2 lines shouldn't be necessary but whatever I'll just add it
+        self.status = CpuFlags::from_bits_truncate(value);
         self.status.remove(CpuFlags::BREAK);
-        self.status.remove(CpuFlags::BREAK2);
+        self.status.insert(CpuFlags::BREAK2);
     }
 
     /// Push address - 1 of return point onto stack and set program counter to target address.
@@ -728,9 +725,9 @@ impl CPU {
     fn rti(&mut self) {
         let saved_flags = self.pull_from_stack();
 
-        self.status = CpuFlags::from_bits_truncate(saved_flags & 0b1100_1111);
+        self.status = CpuFlags::from_bits_truncate(saved_flags);
         self.status.remove(CpuFlags::BREAK);
-        self.status.remove(CpuFlags::BREAK2);
+        self.status.insert(CpuFlags::BREAK2);
 
         self.program_counter = self.pull_from_stack_u16();
     }
@@ -782,45 +779,63 @@ impl CPU {
         self.set_zero_flag_with(compare_to.wrapping_sub(value));
         self.set_negative_flag_with(compare_to.wrapping_sub(value));
     }
+
+    /// Calls the load function, then resets the cpu state and afterwards executes the loaded program.
+    /// TODO: prefixed with underscore because unused outside of tests
+    pub fn _reset_and_run(&mut self) {
+        self.reset();
+        // we manually set the program_counter after reset to 0x8000 where our test code is actually stored
+        self.program_counter = 0x8000;
+        self.run_with_callback(|_| {});
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    use crate::cartridge::test;
+
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
-        let mut cpu = CPU::new();
-        cpu._load_and_run(vec![0xa9, 0x05, 0x00]);
+        let value = 0x05;
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, value, 0x00])));
+        let mut cpu = CPU::new(bus);
 
+        cpu._reset_and_run();
+
+        assert!(cpu.register_a == value);
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
         assert!(cpu.status.bits() & 0b1000_0000 == 0);
     }
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
-        let mut cpu = CPU::new();
-        cpu._load_and_run(vec![0xa9, 0x00, 0x00]);
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0x00, 0x00])));
+        let mut cpu = CPU::new(bus);
+        cpu._reset_and_run();
 
         assert!(cpu.status.bits() & 0b0000_0010 == 0b10);
     }
 
     #[test]
     fn test_lda_from_memory() {
-        let mut cpu = CPU::new();
         let data = 0x55;
+        let bus = Bus::new(test::test_rom(Some(vec![0xa5, 0x10, 0x00])));
+        let mut cpu = CPU::new(bus);
         cpu.mem_write(0x10, data);
 
-        cpu._load_and_run(vec![0xa5, 0x10, 0x00]);
+        cpu._reset_and_run();
 
         assert_eq!(cpu.register_a, data);
     }
 
     #[test]
     fn test_0xaa_tax_transfer_data() {
-        let mut cpu = CPU::new();
         let test_value = 5;
-        cpu._load_and_run(vec![0xa9, test_value, 0xaa, 0x00]);
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, test_value, 0xaa, 0x00])));
+        let mut cpu = CPU::new(bus);
+        cpu._reset_and_run();
 
         assert!(cpu.register_x == test_value);
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
@@ -829,28 +844,33 @@ mod test {
 
     #[test]
     fn test_5_ops_working_together() {
-        let mut cpu = CPU::new();
-        cpu._load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00])));
+        let mut cpu = CPU::new(bus);
+        cpu._reset_and_run();
 
         assert_eq!(cpu.register_x, 0xc1);
     }
 
     #[test]
     fn test_inx_overflow() {
-        let mut cpu = CPU::new();
-        cpu._load_and_run(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
+        let bus = Bus::new(test::test_rom(Some(vec![
+            0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00,
+        ])));
+        let mut cpu = CPU::new(bus);
+        cpu._reset_and_run();
 
         assert_eq!(cpu.register_x, 1);
     }
 
     #[test]
     fn test_sta_working() {
-        let mut cpu = CPU::new();
         let data = 10;
         let addr = 0x0f;
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, data, 0x85, addr, 0x00])));
+        let mut cpu = CPU::new(bus);
 
-        cpu._load_and_run(vec![0xa9, data, 0x85, addr, 0x00]);
+        cpu._reset_and_run();
 
-        assert_eq!(cpu.memory[addr as usize], data);
+        assert_eq!(cpu.mem_read(addr as u16), data);
     }
 }

@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use lazy_static::lazy_static;
+use strum::Display;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum Mnemonic {
     ADC,
     AND,
