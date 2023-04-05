@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 use strum::Display;
 
-#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 #[derive(Debug, Display)]
 pub enum Mnemonic {
     ADC,
@@ -62,6 +62,62 @@ pub enum Mnemonic {
     TXA,
     TXS,
     TYA,
+
+    // 24 unofficial opcodes taken from https://www.nesdev.org/undocumented_opcodes.txt
+    // more references:
+    // https://www.nesdev.org/wiki/CPU_unofficial_opcodes
+    // https://www.nesdev.org/wiki/Programming_with_unofficial_opcodes
+    // http://www.oxyron.de/html/opcodes02.html (anywhere H is used means high byte of specified address)
+    // https://archive.nes.science/nesdev-forums/f3/t14063.xhtml
+    // the actual implementation of these codes is collected from all those sources
+    #[strum(serialize = "*AAC")]
+    AAC_Unofficial, // also called ANC
+    #[strum(serialize = "*AAX")]
+    AAX_Unofficial, // also called SAX or AXS
+    #[strum(serialize = "*ARR")]
+    ARR_Unofficial,
+    #[strum(serialize = "*ASR")]
+    ASR_Unofficial, // also called ALR
+    #[strum(serialize = "*ATX")]
+    ATX_Unofficial, // also called LXA or OAL
+    #[strum(serialize = "*AXA")]
+    AXA_Unofficial, // also called SHA or AHX
+    #[strum(serialize = "*AXS")]
+    AXS_Unofficial, // also called SBX or SAX
+    #[strum(serialize = "*DCP")]
+    DCP_Unofficial, // also called DCM
+    #[strum(serialize = "*DOP")]
+    DOP_Unofficial, // also called NOP or SKB
+    #[strum(serialize = "*ISC")]
+    ISC_Unofficial, // also called ISB or INS
+    #[strum(serialize = "*KIL")]
+    KIL_Unofficial, // also called JAM or HLT
+    #[strum(serialize = "*LAR")]
+    LAR_Unofficial, // also called LAE or LAS
+    #[strum(serialize = "*LAX")]
+    LAX_Unofficial,
+    #[strum(serialize = "*NOP")]
+    NOP_Unofficial,
+    #[strum(serialize = "*RLA")]
+    RLA_Unofficial,
+    #[strum(serialize = "*RRA")]
+    RRA_Unofficial,
+    #[strum(serialize = "*SBC")]
+    SBC_Unofficial,
+    #[strum(serialize = "*SLO")]
+    SLO_Unofficial, // also called ASO
+    #[strum(serialize = "*SRE")]
+    SRE_Unofficial, // also called LSE
+    #[strum(serialize = "*SXA")]
+    SXA_Unofficial, // also called SHX or XAS
+    #[strum(serialize = "*SYA")]
+    SYA_Unofficial, // also called SHY or SAY
+    #[strum(serialize = "*TOP")]
+    TOP_Unofficial, // also called NOP or SKW
+    #[strum(serialize = "*XAA")]
+    XAA_Unofficial, // also called ANE
+    #[strum(serialize = "*XAS")]
+    XAS_Unofficial, // also called SHS or TAS
 }
 
 #[derive(Debug)]
@@ -302,6 +358,136 @@ lazy_static! {
         OpCode::new(0x58, Mnemonic::CLI, 1, 2, AddressingMode::Implied),
         OpCode::new(0xb8, Mnemonic::CLV, 1, 2, AddressingMode::Implied),
         OpCode::new(0xd8, Mnemonic::CLD, 1, 2, AddressingMode::Implied),
+
+        // UNOFFICIAL
+        OpCode::new(0x0b, Mnemonic::AAC_Unofficial, 2, 2, AddressingMode::Immediate),
+        OpCode::new(0x2b, Mnemonic::AAC_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0x87, Mnemonic::AAX_Unofficial, 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0x97, Mnemonic::AAX_Unofficial, 2, 4, AddressingMode::ZeroPageY),
+        OpCode::new(0x83, Mnemonic::AAX_Unofficial, 2, 6, AddressingMode::IndirectX),
+        OpCode::new(0x8f, Mnemonic::AAX_Unofficial, 3, 4, AddressingMode::Absolute),
+
+        OpCode::new(0x6b, Mnemonic::ARR_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0x4b, Mnemonic::ASR_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0xab, Mnemonic::ATX_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0x9f, Mnemonic::AXA_Unofficial, 3, 5, AddressingMode::AbsoluteY),
+        OpCode::new(0x93, Mnemonic::AXA_Unofficial, 2, 6, AddressingMode::IndirectY),
+
+        OpCode::new(0xcb, Mnemonic::AXS_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0xc7, Mnemonic::DCP_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0xd7, Mnemonic::DCP_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0xcf, Mnemonic::DCP_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0xdf, Mnemonic::DCP_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0xdb, Mnemonic::DCP_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0xc3, Mnemonic::DCP_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0xd3, Mnemonic::DCP_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0x04, Mnemonic::DOP_Unofficial, 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0x14, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+        OpCode::new(0x34, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+        OpCode::new(0x44, Mnemonic::DOP_Unofficial, 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0x54, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+        OpCode::new(0x64, Mnemonic::DOP_Unofficial, 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0x74, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+        OpCode::new(0x80, Mnemonic::DOP_Unofficial, 2, 2, AddressingMode::Immediate),
+        OpCode::new(0x82, Mnemonic::DOP_Unofficial, 2, 2, AddressingMode::Immediate),
+        OpCode::new(0x89, Mnemonic::DOP_Unofficial, 2, 2, AddressingMode::Immediate),
+        OpCode::new(0xc2, Mnemonic::DOP_Unofficial, 2, 2, AddressingMode::Immediate),
+        OpCode::new(0xd4, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+        OpCode::new(0xe2, Mnemonic::DOP_Unofficial, 2, 2, AddressingMode::ZeroPage),
+        OpCode::new(0xf4, Mnemonic::DOP_Unofficial, 2, 4, AddressingMode::ZeroPageX),
+
+        OpCode::new(0xe7, Mnemonic::ISC_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0xf7, Mnemonic::ISC_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0xef, Mnemonic::ISC_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0xff, Mnemonic::ISC_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0xfb, Mnemonic::ISC_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0xe3, Mnemonic::ISC_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0xf3, Mnemonic::ISC_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0x02, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x12, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x22, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x32, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x42, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x52, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x62, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x72, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0x92, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0xb2, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0xd2, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+        OpCode::new(0xf2, Mnemonic::KIL_Unofficial, 1, 0, AddressingMode::Implied),
+
+        OpCode::new(0xbb, Mnemonic::LAR_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteY),
+
+        OpCode::new(0xa7, Mnemonic::LAX_Unofficial, 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0xb7, Mnemonic::LAX_Unofficial, 2, 4, AddressingMode::ZeroPageY),
+        OpCode::new(0xaf, Mnemonic::LAX_Unofficial, 3, 4, AddressingMode::Absolute),
+        OpCode::new(0xbf, Mnemonic::LAX_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteY),
+        OpCode::new(0xa3, Mnemonic::LAX_Unofficial, 2, 6, AddressingMode::IndirectX),
+        OpCode::new(0xb3, Mnemonic::LAX_Unofficial, 2, 5 /*+1 if page crossed*/, AddressingMode::IndirectY),
+
+        OpCode::new(0x1a, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+        OpCode::new(0x3a, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+        OpCode::new(0x5a, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+        OpCode::new(0x7a, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+        OpCode::new(0xda, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+        OpCode::new(0xfa, Mnemonic::NOP_Unofficial, 1, 2, AddressingMode::Implied),
+
+        OpCode::new(0x27, Mnemonic::RLA_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x37, Mnemonic::RLA_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0x2f, Mnemonic::RLA_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x3f, Mnemonic::RLA_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0x3b, Mnemonic::RLA_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0x23, Mnemonic::RLA_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0x33, Mnemonic::RLA_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0x67, Mnemonic::RRA_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x77, Mnemonic::RRA_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0x6f, Mnemonic::RRA_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x7f, Mnemonic::RRA_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0x7b, Mnemonic::RRA_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0x63, Mnemonic::RRA_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0x73, Mnemonic::RRA_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0xeb, Mnemonic::SBC_Unofficial, 2, 2, AddressingMode::Immediate),
+
+        OpCode::new(0x07, Mnemonic::SLO_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x17, Mnemonic::SLO_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0x0f, Mnemonic::SLO_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x1f, Mnemonic::SLO_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0x1b, Mnemonic::SLO_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0x03, Mnemonic::SLO_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0x13, Mnemonic::SLO_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0x47, Mnemonic::SRE_Unofficial, 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x57, Mnemonic::SRE_Unofficial, 2, 6, AddressingMode::ZeroPageX),
+        OpCode::new(0x4f, Mnemonic::SRE_Unofficial, 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x5f, Mnemonic::SRE_Unofficial, 3, 7, AddressingMode::AbsoluteX),
+        OpCode::new(0x5b, Mnemonic::SRE_Unofficial, 3, 7, AddressingMode::AbsoluteY),
+        OpCode::new(0x43, Mnemonic::SRE_Unofficial, 2, 8, AddressingMode::IndirectX),
+        OpCode::new(0x53, Mnemonic::SRE_Unofficial, 2, 8, AddressingMode::IndirectY),
+
+        OpCode::new(0x9e, Mnemonic::SXA_Unofficial, 3, 5, AddressingMode::AbsoluteY),
+
+        OpCode::new(0x9c, Mnemonic::SYA_Unofficial, 3, 5, AddressingMode::AbsoluteY),
+
+        OpCode::new(0x0c, Mnemonic::TOP_Unofficial, 3, 4, AddressingMode::Absolute),
+        OpCode::new(0x1c, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+        OpCode::new(0x3c, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+        OpCode::new(0x5c, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+        OpCode::new(0x7c, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+        OpCode::new(0xdc, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+        OpCode::new(0xfc, Mnemonic::TOP_Unofficial, 3, 4 /*+1 if page crossed*/, AddressingMode::AbsoluteX),
+
+        OpCode::new(0x8b, Mnemonic::XAA_Unofficial, 2, 3, AddressingMode::Immediate),
+
+        OpCode::new(0x9b, Mnemonic::XAS_Unofficial, 3, 5, AddressingMode::AbsoluteY),
     ];
 
     pub static ref OPCODES_MAP: HashMap<u8, &'static OpCode> = {

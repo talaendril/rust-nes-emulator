@@ -140,6 +140,240 @@ impl Stack for CPU {
     }
 }
 
+/// this impl contains the unofficial op code implementations
+impl CPU {
+    /// Bitwise AND value with Accumulator, set CARRY flag is the result is negative.
+    fn aac(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.set_register_a(value & self.register_a);
+
+        if self.status.contains(CpuFlags::NEGATIV) {
+            self.status.insert(CpuFlags::CARRY);
+        } else {
+            self.status.remove(CpuFlags::CARRY);
+        }
+    }
+
+    /// Bitwise AND accumulator with register x and store result in memory.
+    /// https://www.nesdev.org/undocumented_opcodes.txt says that NEGATIVE and ZERO flag are affected
+    /// but https://www.nesdev.org/wiki/Programming_with_unofficial_opcodes says that no flags are affected
+    /// we simply ignore flags here
+    fn aax(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.register_a & self.register_x;
+
+        self.mem_write(addr, data);
+    }
+
+    /// Bitwise AND value with accumulator, then rotate one bit right in accumulator and check bit 5 and 6:
+    /// If both bits are 1: set C, clear V.
+    /// If both bits are 0: clear C and V.
+    /// If only bit 5 is 1: set V, clear C.
+    /// If only bit 6 is 1: set C and V.
+    fn aar(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
+        self.set_register_a(data & self.register_a);
+
+        let mut value = self.register_a;
+        let saved_carry = self.status.contains(CpuFlags::CARRY);
+
+        value >>= 1;
+        if saved_carry {
+            value |= 0b1000_0000;
+        }
+
+        self.set_register_a(value);
+
+        match (value >> 5 & 1 == 1, value >> 6 & 1 == 1) {
+            (true, true) => {
+                self.status.insert(CpuFlags::CARRY);
+                self.status.remove(CpuFlags::OVERFLOW);
+            }
+            (false, false) => {
+                self.status.remove(CpuFlags::CARRY);
+                self.status.remove(CpuFlags::OVERFLOW);
+            }
+            (true, false) => {
+                self.status.insert(CpuFlags::OVERFLOW);
+                self.status.remove(CpuFlags::CARRY);
+            }
+            (false, true) => {
+                self.status.insert(CpuFlags::CARRY);
+                self.status.insert(CpuFlags::OVERFLOW);
+            }
+        }
+    }
+
+    /// Bitwise AND value with accumulator, then shift right one bit in the accumulator
+    fn asr(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.set_register_a(value & self.register_a);
+
+        if self.register_a & 1 == 1 {
+            self.status.insert(CpuFlags::CARRY);
+        } else {
+            self.status.remove(CpuFlags::CARRY);
+        }
+
+        self.set_register_a(self.register_a >> 1);
+    }
+
+    /// Bitwise AND value with accumulator, then transfer accumulator to register x.
+    fn atx(&mut self, mode: &AddressingMode) {
+        self.lda(mode);
+        self.tax();
+    }
+
+    /// Bitwise AND accumulator with register x, then AND result with the high-byte of the address and store in memory.
+    fn axa(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let [_, hi] = addr.to_le_bytes();
+
+        let result = self.register_a & self.register_x & hi;
+
+        self.mem_write(addr, result & 0b0000_0111);
+    }
+
+    /// Bitwise AND accumulator with register x, store result in register x, then subtract value from register x without borrow.
+    fn axs(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let result = self.register_x & self.register_a;
+
+        if value <= result {
+            self.status.insert(CpuFlags::CARRY);
+        }
+
+        self.set_register_x(result.wrapping_sub(value));
+    }
+
+    /// Decrement value in memory and then compare with accumulator.
+    /// Copied from: http://www.oxyron.de/html/opcodes02.html => `{adr}:={adr}-1 A-{adr}`
+    /// I think the `A-{adr}` is for the flags.
+    fn dcp(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        let decremented_value = value.wrapping_sub(1);
+        self.mem_write(addr, decremented_value);
+
+        // check if Accumulator - decremented value >= 0 and then set the flags based around that
+        if decremented_value <= self.register_a {
+            self.status.insert(CpuFlags::CARRY);
+        }
+        let result = self.register_a.wrapping_sub(decremented_value);
+        self.set_zero_flag_with(result);
+        self.set_negative_flag_with(result);
+    }
+
+    /// First increment the value in memory then subtract it from the accumulator.
+    fn isc(&mut self, mode: &AddressingMode) {
+        self.inc(mode);
+        self.sbc(mode);
+    }
+
+    /// Bitwise AND value in memory with stack register, then transfer result to accumulator, register x and stack register.
+    fn lar(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        let result = value & self.stack_register;
+
+        self.register_a = result;
+        self.register_x = result;
+        self.stack_register = result;
+
+        self.set_zero_flag_with(result);
+        self.set_negative_flag_with(result);
+    }
+
+    /// First load value into accumulator, than transfer accumulator value into register x.
+    /// Has no `Immediate` addressing mode because that opcode is affected by line noise on the data bus.
+    /// In nesdev.org's words: MOS 6502: even the bugs have bugs.
+    fn lax(&mut self, mode: &AddressingMode) {
+        self.lda(mode);
+        self.tax();
+    }
+
+    /// Rotate one bit left in memory, then bitwise AND with the accumulator and memory.
+    fn rla(&mut self, mode: &AddressingMode) {
+        self.rol(mode);
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.set_register_a(value & self.register_a);
+    }
+
+    /// Rotate one bit right in memory, then add value to the accumulator.
+    fn rra(&mut self, mode: &AddressingMode) {
+        self.ror(mode);
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.add_with_carry(value);
+    }
+
+    /// Same as normal SBC.
+    fn unofficial_sbc(&mut self, mode: &AddressingMode) {
+        self.sbc(mode);
+    }
+
+    /// Shift value in memory one bit to the left, then bitwise OR with accumulator.
+    fn slo(&mut self, mode: &AddressingMode) {
+        self.asl(mode);
+        self.ora(mode);
+    }
+
+    /// Shift value in memory one bit to the right, then bitwise EOR (XOR) with accumulator.
+    fn sre(&mut self, mode: &AddressingMode) {
+        self.lsr(mode);
+        self.eor(mode);
+    }
+
+    /// Bitwise AND register x with high-byte of address + 1 and store the result in memory.
+    fn sxa(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let [_, hi] = addr.to_le_bytes();
+
+        self.mem_write(addr, hi.wrapping_add(1) & self.register_x);
+    }
+
+    /// Bitwise AND register y with high-byte of address + 1 and store the result in memory.
+    fn sya(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let [_, hi] = addr.to_le_bytes();
+
+        self.mem_write(addr, hi.wrapping_add(1) & self.register_y);
+    }
+
+    /// This one seems a bit unpredictable: https://www.nesdev.org/wiki/Visual6502wiki/6502_Opcode_8B_(XAA,_ANE)
+    /// So the actual implementation of this opcode seems to be `A = (A | magic) & X & immediate value`
+    /// where `magic` seems to be either `00, EE or FF`. Now since I am simply emulating, I am choosing to go
+    /// with `FF`. This means that we can ignore that part and the function will look like this: `A = X & immediate value`.
+    /// It is recommended to NOT ever use this function.
+    fn xaa(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.set_register_a(self.register_x & value);
+    }
+
+    /// Bitwise AND register x with accumulator and store the result in the stack register.
+    /// Then bitwise AND the stack register with the high-byte of the address + 1 and store the result in memory.
+    fn xas(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let [_, hi] = addr.to_le_bytes();
+        self.stack_register = self.register_x & self.register_a;
+
+        self.mem_write(addr, self.stack_register & hi.wrapping_add(1));
+    }
+}
+
 impl CPU {
     pub fn new(bus: Bus) -> Self {
         CPU {
@@ -256,6 +490,32 @@ impl CPU {
                 Mnemonic::CLI => self.status.remove(CpuFlags::INTERRUPT_DISABLE),
                 Mnemonic::CLV => self.status.remove(CpuFlags::OVERFLOW),
                 Mnemonic::CLD => self.status.remove(CpuFlags::DECIMAL_MODE), // we ignore decimal mode but I just added it anyway
+
+                // Unofficial
+                Mnemonic::AAC_Unofficial => self.aac(&opcode.addressing_mode),
+                Mnemonic::AAX_Unofficial => self.aax(&opcode.addressing_mode),
+                Mnemonic::ARR_Unofficial => self.aar(&opcode.addressing_mode),
+                Mnemonic::ASR_Unofficial => self.asr(&opcode.addressing_mode),
+                Mnemonic::ATX_Unofficial => self.atx(&opcode.addressing_mode),
+                Mnemonic::AXA_Unofficial => self.axa(&opcode.addressing_mode),
+                Mnemonic::AXS_Unofficial => self.axs(&opcode.addressing_mode),
+                Mnemonic::DCP_Unofficial => self.dcp(&opcode.addressing_mode),
+                Mnemonic::DOP_Unofficial => (),
+                Mnemonic::ISC_Unofficial => self.isc(&opcode.addressing_mode),
+                Mnemonic::KIL_Unofficial => (), // seems to be treated the same as NOPs but I don't know, every reference mentions something about halting and setting data bus to a 0xFF
+                Mnemonic::LAR_Unofficial => self.lar(&opcode.addressing_mode),
+                Mnemonic::LAX_Unofficial => self.lax(&opcode.addressing_mode),
+                Mnemonic::NOP_Unofficial => (),
+                Mnemonic::RLA_Unofficial => self.rla(&opcode.addressing_mode),
+                Mnemonic::RRA_Unofficial => self.rra(&opcode.addressing_mode),
+                Mnemonic::SBC_Unofficial => self.unofficial_sbc(&opcode.addressing_mode),
+                Mnemonic::SLO_Unofficial => self.slo(&opcode.addressing_mode),
+                Mnemonic::SRE_Unofficial => self.sre(&opcode.addressing_mode),
+                Mnemonic::SXA_Unofficial => self.sxa(&opcode.addressing_mode),
+                Mnemonic::SYA_Unofficial => self.sya(&opcode.addressing_mode),
+                Mnemonic::TOP_Unofficial => (),
+                Mnemonic::XAA_Unofficial => self.xaa(&opcode.addressing_mode),
+                Mnemonic::XAS_Unofficial => self.xas(&opcode.addressing_mode),
             }
 
             // prevent updating of program_counter after branches/jumps
@@ -622,14 +882,14 @@ impl CPU {
         }
     }
 
-    /// Subtract with Carry and save into accumulator
+    /// Subtract with Carry (acts as Borrow) and save into accumulator
     fn sbc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         // 6502 uses the 1's complement, 2's complement would be to add 1
         // I found this to be helpful: https://retro64.altervista.org/blog/an-introduction-to-6502-math-addiction-subtraction-and-more/
-        // but I have to say I am still skeptical, the CARRY flag acts as a reverse BORROW flag here
+        // but I have to say I am still skeptical; the CARRY flag acts as a reverse BORROW flag here
         self.add_with_carry(!value);
     }
 

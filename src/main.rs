@@ -36,14 +36,6 @@ fn main() {
     //     .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
     //     .unwrap();
 
-    /*
-    TODO:
-    it seems like there are too many calls happenining between LDA calls (0xa5, 0xff; where 0xff contains the input)
-    I don't know if this is by design and my rust just runs slow because it is executed on windows
-    or if it's because of an error inside my instructions that cause errors (program_counter errors maybe?)
-    What makes me think that it is a combination of both is the fact that I have run the guide's code
-    and while it was faster it wasnt as fast as shown in the gif.
-     */
     let bytes = std::fs::read("nestest.nes").unwrap();
     let rom = Rom::new(&bytes).unwrap();
     let bus = Bus::new(rom);
