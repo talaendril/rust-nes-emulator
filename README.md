@@ -23,3 +23,5 @@ Input lag might also be a problem with this approach since just funnel the event
 With the snake example the performance was really bad. The snake needed around 2-3 seconds between moves, I don't think this is
 because of my rust implementation but I am unsure. I ran the guide code as well and the snake needed only around 1 second between 
 moves, so it might just be my implementation. Just writing it down here so I don't forget it...
+Addition: it seems like there are too many compare calls and noops happening between the loads and thus it takes really long.
+The program also seems to go to the right at the beginning and ignores any left input.
