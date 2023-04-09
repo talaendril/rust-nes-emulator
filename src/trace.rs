@@ -3,7 +3,7 @@ use crate::{
     opcode::{self, AddressingMode},
 };
 
-pub fn trace(cpu: &CPU) -> String {
+pub fn trace(cpu: &mut CPU) -> String {
     let opcodes = &(*opcode::OPCODES_MAP);
 
     let code = cpu.mem_read(cpu.program_counter);

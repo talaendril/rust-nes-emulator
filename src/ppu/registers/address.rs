@@ -1,6 +1,9 @@
 pub struct AddrRegister {
     hi: u8,
     lo: u8,
+    // since the address register expects a 16 bit address this acts as the latch to write the correct value
+    // a latch is a set of D-Flip-Flops used to temporarily store a value
+    // the address register has 2 8-bit latches and this flag is the switch so to speak
     hi_ptr: bool,
 }
 

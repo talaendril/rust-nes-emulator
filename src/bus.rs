@@ -94,14 +94,17 @@ impl Mem for Bus {
             | PPU_DIRECT_MEMORY_ACCESS_REGISTER => {
                 panic!("Attempt to read from write-only PPU address {:x}", addr);
             }
-            PPU_STATUS_REGISTER => todo!(),
-            PPU_OAM_DATA_REGISTER => todo!(),
-            PPU_DATA_REGISTER => self.ppu.read_data(),
+            PPU_STATUS_REGISTER => self.ppu.read_status_register(),
+            PPU_OAM_DATA_REGISTER => self.ppu.read_oam_data_register(),
+            PPU_DATA_REGISTER => self.ppu.read_data_register(),
             PPU_REGISTERS_MIRROR_START..=PPU_REGISTERS_MIRRORS_END => {
+                // because every register after 0x2007 is mirrored to the previous 8 byte we need to mirror down
+                // example: 0x3456 is the same as 0x2006
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
                 self.mem_read(mirror_down_addr)
             }
             PRG_ROM..=PRG_ROM_END => self.read_prg_rom(addr),
+
             _ => {
                 println!("Ignoring mem access at {}", addr);
                 0
@@ -115,15 +118,14 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & 0b111_1111_1111;
                 self.cpu_vram[mirror_down_addr as usize] = data;
             }
-            PPU_CTRL_REGISTER => {
-                // self.ppu.write_to_ctrl(data);
-                todo!()
-            }
-            PPU_ADDR_REGISTER => self.ppu.write_to_ppu_addr(data),
-            PPU_DATA_REGISTER => {
-                // self.ppu.write_to_data(data);
-                todo!()
-            }
+            PPU_CTRL_REGISTER => self.ppu.write_to_ctrl_register(data),
+            PPU_MASK_REGISTER => self.ppu.write_to_mask_register(data),
+            PPU_STATUS_REGISTER => panic!("Attempt to write to read-only PPU status register"),
+            PPU_OAM_ADDRESS_REGISTER => self.ppu.write_to_oam_addr_register(data),
+            PPU_OAM_DATA_REGISTER => self.ppu.write_to_oam_data_register(data),
+            PPU_SCROLL_REGISTER => self.ppu.write_to_scroll_register(data),
+            PPU_ADDR_REGISTER => self.ppu.write_to_addr_register(data),
+            PPU_DATA_REGISTER => self.ppu.write_to_data_register(data),
             PPU_REGISTERS_MIRROR_START..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
                 self.mem_write(mirror_down_addr, data);
