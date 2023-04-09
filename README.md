@@ -25,3 +25,6 @@ because of my rust implementation but I am unsure. I ran the guide code as well 
 moves, so it might just be my implementation. Just writing it down here so I don't forget it...
 Addition: it seems like there are too many compare calls and noops happening between the loads and thus it takes really long.
 The program also seems to go to the right at the beginning and ignores any left input.
+
+## Future Plans
+- Extract core 6502 into own lib and build the unofficial codes around it

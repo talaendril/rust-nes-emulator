@@ -49,13 +49,19 @@ const STACK: u16 = 0x0100;
 const PROGRAM_INIT_ADDR: u16 = 0xFFFC;
 // const PROGRAM_START_ADDR: u16 = 0x8600;
 
+/// This trait contains a lot of mutability which is something I would like to avoid.
+/// Why does it need mutability? When we read data from PPU data register, we also mutate
+/// that registers state internally (specifically the internal buffer and VRAM address).
+/// This mutability then spreads to this trait.
+/// TODO: Try and fix it.
 pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
+    /// Reads 8 byte integer at given `addr`.
+    fn mem_read(&mut self, addr: u16) -> u8;
 
     fn mem_write(&mut self, addr: u16, data: u8);
 
     /// Reads the 16 byte integer at the given `pos` using Little-Endian methods.
-    fn mem_read_u16(&self, pos: u16) -> u16 {
+    fn mem_read_u16(&mut self, pos: u16) -> u16 {
         let lo = self.mem_read(pos);
         let hi = self.mem_read(pos + 1);
 
@@ -109,7 +115,7 @@ pub struct CPU {
 }
 
 impl Mem for CPU {
-    fn mem_read(&self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
     }
 
@@ -117,7 +123,7 @@ impl Mem for CPU {
         self.bus.mem_write(addr, data);
     }
 
-    fn mem_read_u16(&self, pos: u16) -> u16 {
+    fn mem_read_u16(&mut self, pos: u16) -> u16 {
         self.bus.mem_read_u16(pos)
     }
 
@@ -525,7 +531,7 @@ impl CPU {
         }
     }
 
-    pub fn get_absolute_address(&self, mode: &AddressingMode, addr: u16) -> u16 {
+    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> u16 {
         match mode {
             AddressingMode::Immediate => addr,
             AddressingMode::ZeroPage => self.mem_read(addr) as u16,
@@ -584,11 +590,11 @@ impl CPU {
 
     /// Returns address for a corresponding [`AddressingMode`].
     /// Address is derived from the [`progam_counter`](CPU) of CPU.
-    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         self.get_absolute_address(mode, self.program_counter)
     }
 
-    fn get_accumulator_or_memory(&self, mode: &AddressingMode) -> (u8, Option<u16>) {
+    fn get_accumulator_or_memory(&mut self, mode: &AddressingMode) -> (u8, Option<u16>) {
         if let AddressingMode::Accumulator = mode {
             (self.register_a, None)
         } else {
