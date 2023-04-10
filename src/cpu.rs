@@ -150,7 +150,7 @@ impl Stack for CPU {
 impl CPU {
     /// Bitwise AND value with Accumulator, set CARRY flag is the result is negative.
     fn aac(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         self.set_register_a(value & self.register_a);
@@ -167,7 +167,7 @@ impl CPU {
     /// but https://www.nesdev.org/wiki/Programming_with_unofficial_opcodes says that no flags are affected
     /// we simply ignore flags here
     fn aax(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let data = self.register_a & self.register_x;
 
         self.mem_write(addr, data);
@@ -179,7 +179,7 @@ impl CPU {
     /// If only bit 5 is 1: set V, clear C.
     /// If only bit 6 is 1: set C and V.
     fn aar(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let data = self.mem_read(addr);
         self.set_register_a(data & self.register_a);
 
@@ -215,7 +215,7 @@ impl CPU {
 
     /// Bitwise AND value with accumulator, then shift right one bit in the accumulator
     fn asr(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         self.set_register_a(value & self.register_a);
@@ -237,7 +237,7 @@ impl CPU {
 
     /// Bitwise AND accumulator with register x, then AND result with the high-byte of the address and store in memory.
     fn axa(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let [_, hi] = addr.to_le_bytes();
 
         let result = self.register_a & self.register_x & hi;
@@ -247,7 +247,7 @@ impl CPU {
 
     /// Bitwise AND accumulator with register x, store result in register x, then subtract value from register x without borrow.
     fn axs(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
         let result = self.register_x & self.register_a;
 
@@ -262,7 +262,7 @@ impl CPU {
     /// Copied from: http://www.oxyron.de/html/opcodes02.html => `{adr}:={adr}-1 A-{adr}`
     /// I think the `A-{adr}` is for the flags.
     fn dcp(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         let decremented_value = value.wrapping_sub(1);
@@ -285,7 +285,7 @@ impl CPU {
 
     /// Bitwise AND value in memory with stack register, then transfer result to accumulator, register x and stack register.
     fn lar(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         let result = value & self.stack_register;
@@ -293,6 +293,11 @@ impl CPU {
         self.register_a = result;
         self.register_x = result;
         self.stack_register = result;
+
+        // LAR adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_zero_flag_with(result);
         self.set_negative_flag_with(result);
@@ -309,7 +314,7 @@ impl CPU {
     /// Rotate one bit left in memory, then bitwise AND with the accumulator and memory.
     fn rla(&mut self, mode: &AddressingMode) {
         self.rol(mode);
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         self.set_register_a(value & self.register_a);
@@ -318,7 +323,7 @@ impl CPU {
     /// Rotate one bit right in memory, then add value to the accumulator.
     fn rra(&mut self, mode: &AddressingMode) {
         self.ror(mode);
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         self.add_with_carry(value);
@@ -343,7 +348,7 @@ impl CPU {
 
     /// Bitwise AND register x with high-byte of address + 1 and store the result in memory.
     fn sxa(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let [_, hi] = addr.to_le_bytes();
 
         self.mem_write(addr, hi.wrapping_add(1) & self.register_x);
@@ -351,10 +356,20 @@ impl CPU {
 
     /// Bitwise AND register y with high-byte of address + 1 and store the result in memory.
     fn sya(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let [_, hi] = addr.to_le_bytes();
 
         self.mem_write(addr, hi.wrapping_add(1) & self.register_y);
+    }
+
+    /// The TOP instruction is triple NOP but it does increment the cycle if a page was crossed so we need to have this function.
+    fn top(&mut self, mode: &AddressingMode) {
+        let (addr, page_crossed) = self.get_operand_address(mode);
+        let _ = self.mem_read(addr);
+
+        if page_crossed {
+            self.bus.tick(1);
+        }
     }
 
     /// This one seems a bit unpredictable: https://www.nesdev.org/wiki/Visual6502wiki/6502_Opcode_8B_(XAA,_ANE)
@@ -363,7 +378,7 @@ impl CPU {
     /// with `FF`. This means that we can ignore that part and the function will look like this: `A = X & immediate value`.
     /// It is recommended to NOT ever use this function.
     fn xaa(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         self.set_register_a(self.register_x & value);
@@ -372,7 +387,7 @@ impl CPU {
     /// Bitwise AND register x with accumulator and store the result in the stack register.
     /// Then bitwise AND the stack register with the high-byte of the address + 1 and store the result in memory.
     fn xas(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let [_, hi] = addr.to_le_bytes();
         self.stack_register = self.register_x & self.register_a;
 
@@ -418,6 +433,10 @@ impl CPU {
 
         loop {
             callback(self);
+
+            if let Some(_nmi) = self.bus.poll_nmi_status() {
+                self.interrupt_nmi();
+            }
 
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
@@ -475,7 +494,7 @@ impl CPU {
                 Mnemonic::CPY => self.compare(&opcode.addressing_mode, self.register_y),
 
                 // Branching
-                Mnemonic::BRK => return,
+                Mnemonic::BRK => return, // TODO: this should trigger a BRK interrupt, see: https://www.nesdev.org/wiki/CPU_interrupts
                 Mnemonic::JMP => self.jump(&opcode.addressing_mode),
                 Mnemonic::BPL => self.branch(!self.status.contains(CpuFlags::NEGATIV)),
                 Mnemonic::BMI => self.branch(self.status.contains(CpuFlags::NEGATIV)),
@@ -519,10 +538,13 @@ impl CPU {
                 Mnemonic::SRE_Unofficial => self.sre(&opcode.addressing_mode),
                 Mnemonic::SXA_Unofficial => self.sxa(&opcode.addressing_mode),
                 Mnemonic::SYA_Unofficial => self.sya(&opcode.addressing_mode),
-                Mnemonic::TOP_Unofficial => (),
+                Mnemonic::TOP_Unofficial => self.top(&opcode.addressing_mode),
                 Mnemonic::XAA_Unofficial => self.xaa(&opcode.addressing_mode),
                 Mnemonic::XAS_Unofficial => self.xas(&opcode.addressing_mode),
             }
+
+            // TODO: add cycles if page crossed or when successful branching
+            self.bus.tick(opcode.cycles);
 
             // prevent updating of program_counter after branches/jumps
             if program_counter_state == self.program_counter {
@@ -531,26 +553,32 @@ impl CPU {
         }
     }
 
-    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> u16 {
+    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> (u16, bool) {
+        fn crossed_page(addr1: u16, addr2: u16) -> bool {
+            addr1 & 0xFF00 != addr2 & 0xFF00
+        }
+
         match mode {
-            AddressingMode::Immediate => addr,
-            AddressingMode::ZeroPage => self.mem_read(addr) as u16,
+            AddressingMode::Immediate => (addr, false),
+            AddressingMode::ZeroPage => (self.mem_read(addr) as u16, false),
             AddressingMode::ZeroPageX => {
                 let pos = self.mem_read(addr);
-                pos.wrapping_add(self.register_x) as u16
+                (pos.wrapping_add(self.register_x) as u16, false)
             }
             AddressingMode::ZeroPageY => {
                 let pos = self.mem_read(addr);
-                pos.wrapping_add(self.register_y) as u16
+                (pos.wrapping_add(self.register_y) as u16, false)
             }
-            AddressingMode::Absolute => self.mem_read_u16(addr),
+            AddressingMode::Absolute => (self.mem_read_u16(addr), false),
             AddressingMode::AbsoluteX => {
                 let base = self.mem_read_u16(addr);
-                base.wrapping_add(self.register_x as u16)
+                let ret_addr = base.wrapping_add(self.register_x as u16);
+                (ret_addr, crossed_page(base, ret_addr))
             }
             AddressingMode::AbsoluteY => {
                 let base = self.mem_read_u16(addr);
-                base.wrapping_add(self.register_y as u16)
+                let ret_addr = base.wrapping_add(self.register_y as u16);
+                (ret_addr, crossed_page(base, ret_addr))
             }
             // JMP is the only instruction to use Indirect AddressingMode in the 6502
             AddressingMode::Indirect => {
@@ -561,9 +589,9 @@ impl CPU {
                 if base & 0x00FF == 0x00FF {
                     let lo = self.mem_read(base);
                     let hi = self.mem_read(base & 0xFF00);
-                    u16::from_le_bytes([lo, hi])
+                    (u16::from_le_bytes([lo, hi]), false)
                 } else {
-                    self.mem_read_u16(base)
+                    (self.mem_read_u16(base), false)
                 }
             }
             AddressingMode::IndirectX => {
@@ -571,14 +599,15 @@ impl CPU {
                 let ptr = base.wrapping_add(self.register_x);
                 let lo = self.mem_read(ptr as u16);
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
-                u16::from_le_bytes([lo, hi])
+                (u16::from_le_bytes([lo, hi]), false)
             }
             AddressingMode::IndirectY => {
                 let base = self.mem_read(addr);
                 let lo = self.mem_read(base as u16);
                 let hi = self.mem_read(base.wrapping_add(1) as u16);
                 let deref_base = u16::from_le_bytes([lo, hi]);
-                deref_base.wrapping_add(self.register_y as u16)
+                let ret_addr = deref_base.wrapping_add(self.register_y as u16);
+                (ret_addr, crossed_page(deref_base, ret_addr))
             }
             // these modes are handled differently, we don't want this branch to be called so we panic.
             AddressingMode::Accumulator | AddressingMode::Relative | AddressingMode::Implied => panic!(
@@ -590,15 +619,31 @@ impl CPU {
 
     /// Returns address for a corresponding [`AddressingMode`].
     /// Address is derived from the [`progam_counter`](CPU) of CPU.
-    fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
         self.get_absolute_address(mode, self.program_counter)
+    }
+
+    /// Stores the program_couinter and status flag on the stack.
+    /// Loads address of interrupt handler from 0xFFFA and sets the program_counter to that address.
+    fn interrupt_nmi(&mut self) {
+        self.push_to_stack_u16(self.program_counter);
+
+        let mut flag = self.status.clone();
+        flag.remove(CpuFlags::BREAK); // flag.set(CpuFlags::BREAK, false);
+        flag.insert(CpuFlags::BREAK2); // flag.set(CpuFlags::BREAK2, true);
+
+        self.push_to_stack(flag.bits());
+        self.status.insert(CpuFlags::INTERRUPT_DISABLE);
+
+        self.bus.tick(2);
+        self.program_counter = self.mem_read_u16(0xfffa);
     }
 
     fn get_accumulator_or_memory(&mut self, mode: &AddressingMode) -> (u8, Option<u16>) {
         if let AddressingMode::Accumulator = mode {
             (self.register_a, None)
         } else {
-            let addr = self.get_operand_address(mode);
+            let (addr, _) = self.get_operand_address(mode);
             (self.mem_read(addr), Some(addr))
         }
     }
@@ -669,16 +714,26 @@ impl CPU {
 
     /// Add with Carry and save into accumulator
     fn adc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // ADC adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.add_with_carry(value);
     }
 
     /// Bitwise AND of value inside accumulator and value stored at address (calculated via `mode`).
     fn and(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // AND adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_a(value & self.register_a);
     }
@@ -708,7 +763,7 @@ impl CPU {
     /// Bit Test Operation. Take value in a specific memory cell and bitwise AND it with the accumulator.
     /// Depending on the result set the ZERO, NEGATIV and OVERFLOW flags.
     fn bit(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
         let result = value & self.register_a;
@@ -720,7 +775,7 @@ impl CPU {
 
     /// Decrements the value stored in memory found with `mode`
     fn dec(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
 
         value = value.wrapping_sub(1);
@@ -748,15 +803,20 @@ impl CPU {
 
     /// Bitwise XOR of value inside accumulator and value stored at address (calculated via `mode`).
     fn eor(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // EOR adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_a(value ^ self.register_a);
     }
 
     /// Increment value at memory address (calculated via `mode`).
     fn inc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
 
         value = value.wrapping_add(1);
@@ -784,24 +844,39 @@ impl CPU {
 
     /// Load value stored at address (calculated via `mode`) into accumulator.
     fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // LDA adds one cycle if pages were crossed, also handles the unofficial LAX
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_a(value);
     }
 
     /// Load value stored at address (calculated via `mode`) into register x.
     fn ldx(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // LDX adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_x(value);
     }
 
     /// Load value stored at address (calculated via `mode`) into register y.
     fn ldy(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // LDY adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_y(value);
     }
@@ -830,8 +905,13 @@ impl CPU {
 
     /// Bitwise inclusive OR of value inside accumulator and value stored at address (calculated via `mode`).
     fn ora(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // ORA adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         self.set_register_a(value | self.register_a);
     }
@@ -890,8 +970,13 @@ impl CPU {
 
     /// Subtract with Carry (acts as Borrow) and save into accumulator
     fn sbc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+
+        // SBC adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
 
         // 6502 uses the 1's complement, 2's complement would be to add 1
         // I found this to be helpful: https://retro64.altervista.org/blog/an-introduction-to-6502-math-addiction-subtraction-and-more/
@@ -901,19 +986,19 @@ impl CPU {
 
     /// Stores content of accumulator into memory.
     fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
     }
 
     /// Stores content of register x into memory.
     fn stx(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         self.mem_write(addr, self.register_x);
     }
 
     /// Stores content of register y into memory.
     fn sty(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         self.mem_write(addr, self.register_y);
     }
 
@@ -981,7 +1066,7 @@ impl CPU {
 
     /// Push address - 1 of return point onto stack and set program counter to target address.
     fn jsr(&mut self, op_code: &OpCode) {
-        let addr = self.get_operand_address(&op_code.addressing_mode);
+        let (addr, _) = self.get_operand_address(&op_code.addressing_mode);
         self.push_to_stack_u16(self.program_counter + (op_code.bytes as u16 - 1) - 1);
         self.program_counter = addr;
     }
@@ -1000,23 +1085,31 @@ impl CPU {
 
     /// Pulls program counter from stack to return to the calling routine.
     fn rts(&mut self) {
-        // reference https://www.nesdev.org/obelisk-6502-guide/reference.html#RTS says pc minus 1
-        // but the guide adds 1 => TODO: is this correct?
+        // reference https://www.nesdev.org/obelisk-6502-guide/reference.html#RTS says pc - 1 but the guide adds 1
         self.program_counter = self.pull_from_stack_u16() + 1;
     }
 
     /// General Branching entry
     fn branch(&mut self, flag: bool) {
         if flag {
+            // branch instructions increment the cycle if successful
+            self.bus.tick(1);
             // we are casting this u8 to i8 since branching uses relative addressing mode
             // relative addressing mode interprets the value in memory for branches
             // as a signed 8 bit relative offset which will be added to the program_counter
             // reference: https://www.nesdev.org/obelisk-6502-guide/addressing.html#REL
             let jump = self.mem_read(self.program_counter) as i8;
+            let old_pc_incremented = self.program_counter.wrapping_add(1);
             self.program_counter = self
                 .program_counter
                 .wrapping_add(1) // we add one because branching instructions are 2 byte long
                 .wrapping_add(jump as u16);
+
+            // add 1 to the cycles if a page was crossed (every page has 256 bytes)
+            // Note: guide adds 1, but the nesdev doc says +2 if page crossed, I'll stick to the guide for now
+            if old_pc_incremented & 0xFF00 != self.program_counter & 0xFF00 {
+                self.bus.tick(1);
+            }
         }
     }
 
@@ -1027,7 +1120,7 @@ impl CPU {
     /// byte of a page, so it requires different logic.
     /// Check the comment in [`Self::get_operand_address()`] for more information.
     fn jump(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        let (addr, _) = self.get_operand_address(mode);
         self.program_counter = addr;
     }
 
@@ -1037,22 +1130,17 @@ impl CPU {
     /// we can skip the subtraction until we need to set the NEGATIVE bit flag.
     /// More information: http://www.6502.org/tutorials/compare_beyond.html#2.1
     fn compare(&mut self, mode: &AddressingMode, compare_to: u8) {
-        let addr = self.get_operand_address(mode);
+        let (addr, crossed_page) = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
+        // CMP adds one cycle if pages were crossed
+        if crossed_page {
+            self.bus.tick(1);
+        }
+
         self.status.set(CpuFlags::CARRY, compare_to >= value);
-        // self.status.set(CpuFlags::ZERO, compare_to == value);
         self.set_zero_flag_with(compare_to.wrapping_sub(value));
         self.set_negative_flag_with(compare_to.wrapping_sub(value));
-    }
-
-    /// Calls the load function, then resets the cpu state and afterwards executes the loaded program.
-    /// TODO: prefixed with underscore because unused outside of tests
-    pub fn _reset_and_run(&mut self) {
-        self.reset();
-        // we manually set the program_counter after reset to 0x8000 where our test code is actually stored
-        self.program_counter = 0x8000;
-        self.run_with_callback(|_| {});
     }
 }
 
@@ -1062,13 +1150,21 @@ mod test {
 
     use crate::cartridge::test;
 
+    impl CPU {
+        fn reset_and_run(&mut self) {
+            self.reset();
+            self.program_counter = 0x8000;
+            self.run_with_callback(|_| {});
+        }
+    }
+
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let value = 0x05;
         let bus = Bus::new(test::test_rom(Some(vec![0xa9, value, 0x00])));
         let mut cpu = CPU::new(bus);
 
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert!(cpu.register_a == value);
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
@@ -1079,7 +1175,7 @@ mod test {
     fn test_0xa9_lda_zero_flag() {
         let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0x00, 0x00])));
         let mut cpu = CPU::new(bus);
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert!(cpu.status.bits() & 0b0000_0010 == 0b10);
     }
@@ -1091,7 +1187,7 @@ mod test {
         let mut cpu = CPU::new(bus);
         cpu.mem_write(0x10, data);
 
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert_eq!(cpu.register_a, data);
     }
@@ -1101,7 +1197,7 @@ mod test {
         let test_value = 5;
         let bus = Bus::new(test::test_rom(Some(vec![0xa9, test_value, 0xaa, 0x00])));
         let mut cpu = CPU::new(bus);
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert!(cpu.register_x == test_value);
         assert!(cpu.status.bits() & 0b0000_0010 == 0b00);
@@ -1112,7 +1208,7 @@ mod test {
     fn test_5_ops_working_together() {
         let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00])));
         let mut cpu = CPU::new(bus);
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert_eq!(cpu.register_x, 0xc1);
     }
@@ -1123,7 +1219,7 @@ mod test {
             0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00,
         ])));
         let mut cpu = CPU::new(bus);
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert_eq!(cpu.register_x, 1);
     }
@@ -1135,7 +1231,7 @@ mod test {
         let bus = Bus::new(test::test_rom(Some(vec![0xa9, data, 0x85, addr, 0x00])));
         let mut cpu = CPU::new(bus);
 
-        cpu._reset_and_run();
+        cpu.reset_and_run();
 
         assert_eq!(cpu.mem_read(addr as u16), data);
     }

@@ -39,6 +39,10 @@ impl StatusRegister {
         }
     }
 
+    pub fn is_in_vblank(&self) -> bool {
+        self.status.contains(StatusRegisterFlags::VBLANK_STARTED)
+    }
+
     pub fn set_vblank_started(&mut self) {
         self.status.insert(StatusRegisterFlags::VBLANK_STARTED);
     }

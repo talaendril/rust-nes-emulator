@@ -42,43 +42,43 @@ impl MaskRegister {
         }
     }
 
-    pub fn is_greyscale(&self) -> bool {
-        self.status.contains(MaskRegisterFlags::GREYSCALE)
-    }
+    // pub fn is_greyscale(&self) -> bool {
+    //     self.status.contains(MaskRegisterFlags::GREYSCALE)
+    // }
 
-    pub fn show_leftmost_8pxl_background(&self) -> bool {
-        self.status.contains(MaskRegisterFlags::LEFTMOST_BACKGROUND)
-    }
+    // pub fn show_leftmost_8pxl_background(&self) -> bool {
+    //     self.status.contains(MaskRegisterFlags::LEFTMOST_BACKGROUND)
+    // }
 
-    pub fn show_leftmost_8pxl_sprites(&self) -> bool {
-        self.status.contains(MaskRegisterFlags::LEFTMOST_SPRITE)
-    }
+    // pub fn show_leftmost_8pxl_sprites(&self) -> bool {
+    //     self.status.contains(MaskRegisterFlags::LEFTMOST_SPRITE)
+    // }
 
-    pub fn show_background(&self) -> bool {
-        self.status.contains(MaskRegisterFlags::SHOW_BACKGROUND)
-    }
+    // pub fn show_background(&self) -> bool {
+    //     self.status.contains(MaskRegisterFlags::SHOW_BACKGROUND)
+    // }
 
-    pub fn show_sprites(&self) -> bool {
-        self.status.contains(MaskRegisterFlags::SHOW_SPRITES)
-    }
+    // pub fn show_sprites(&self) -> bool {
+    //     self.status.contains(MaskRegisterFlags::SHOW_SPRITES)
+    // }
 
-    pub fn get_emphasized_color(&self) -> Vec<Color> {
-        let mut result: Vec<Color> = vec![];
+    // pub fn get_emphasized_color(&self) -> Vec<Color> {
+    //     let mut result: Vec<Color> = vec![];
 
-        if self.status.contains(MaskRegisterFlags::EMPHASIZE_RED) {
-            result.push(Color::Red);
-        }
+    //     if self.status.contains(MaskRegisterFlags::EMPHASIZE_RED) {
+    //         result.push(Color::Red);
+    //     }
 
-        if self.status.contains(MaskRegisterFlags::EMPHASIZE_GREEN) {
-            result.push(Color::Green);
-        }
+    //     if self.status.contains(MaskRegisterFlags::EMPHASIZE_GREEN) {
+    //         result.push(Color::Green);
+    //     }
 
-        if self.status.contains(MaskRegisterFlags::EMPHASIZE_BLUE) {
-            result.push(Color::Blue);
-        }
+    //     if self.status.contains(MaskRegisterFlags::EMPHASIZE_BLUE) {
+    //         result.push(Color::Blue);
+    //     }
 
-        result
-    }
+    //     result
+    // }
 
     pub fn update(&mut self, data: u8) {
         self.status = MaskRegisterFlags::from_bits_truncate(data);

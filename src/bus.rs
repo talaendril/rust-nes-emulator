@@ -52,6 +52,7 @@ pub struct Bus {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
     ppu: NesPPU,
+    cycles: usize,
 }
 
 impl Bus {
@@ -62,7 +63,17 @@ impl Bus {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
             ppu,
+            cycles: 0,
         }
+    }
+
+    pub fn tick(&mut self, cycles: u8) {
+        self.cycles += cycles as usize;
+        self.ppu.tick(cycles * 3); // times 3 since the PPU clock ticks 3 times faster
+    }
+
+    pub fn poll_nmi_status(&self) -> Option<u8> {
+        todo!()
     }
 
     /// PRG Rom Size might be 16 KiB or 32 KiB.

@@ -1,8 +1,10 @@
 //! Important notes:
 //! PPU renders 262 scanlines per frame, of those 0-240 are visible, the rest are vertical overscans.
 //! Each scanline lasts 341 PPU clock cycles and each clock cycle produces one pixel.
+//! This means that each PPU frame takes 341 * 262 = 89342 PPU clock cycles.
 //! After the 240th scanline the PPU triggers VBlank NMI on the CPU and accesses no more memory.
 //! Which means that usually game state updates happen during scanlines 241-262.
+//! Also the PPU clocks ticks 3 times faster than CPU.
 //!
 //! The PPU also exposes 8 I/O registers that the CPU uses for communication. These registers
 //! are mapped to 0x2000 - 0x2007 in the CPU memory map and then mirrored every 8 bytes from
@@ -27,6 +29,9 @@ pub struct NesPPU {
     scroll: ScrollRegister,       // register at 0x2005, write-only => write called twice (16-bit)
     addr: AddrRegister,           // register at 0x2006, write-only => write called twice (16-bit)
     data: DataRegister,           // register at 0x2007, read and write
+    scanline: u16,
+    cycles: usize,
+    nmi_interrupt: Option<u8>,
 }
 
 impl NesPPU {
@@ -40,11 +45,44 @@ impl NesPPU {
             scroll: ScrollRegister::new(),
             addr: AddrRegister::new(),
             data: DataRegister::new(chr_rom, mirroring),
+            scanline: 0,
+            cycles: 0,
+            nmi_interrupt: None,
         }
     }
 
+    pub fn tick(&mut self, cycles: u8) -> bool {
+        self.cycles += cycles as usize;
+
+        // 341 PPU cycles are needed for 1 scanline to finish
+        if self.cycles >= 341 {
+            self.cycles -= 341;
+            self.scanline += 1;
+
+            // 241st scanline is not visible anymore ans is called vertical overscan
+            if self.scanline == 241 && self.ctrl.generate_vblank_nmi() {
+                self.status.set_vblank_started();
+                todo!("Should trigger NMI interrupt")
+            }
+
+            // per frame 262 scanlines are rendered
+            if self.scanline >= 262 {
+                self.scanline = 0;
+                self.status.clear_vblank_started();
+                return true; // frame finished rendering
+            }
+        }
+
+        false
+    }
+
     pub fn write_to_ctrl_register(&mut self, bits: u8) {
+        let before_nmi_status = self.ctrl.generate_vblank_nmi();
         self.ctrl.update(bits);
+        // trigger NMI if GENERATE_NMI bit in control register changes from 0 to 1 and the PPU is in VBLANK_STARTED state
+        if !before_nmi_status && self.ctrl.generate_vblank_nmi() && self.status.is_in_vblank() {
+            self.nmi_interrupt = Some(1);
+        }
     }
 
     pub fn write_to_mask_register(&mut self, bits: u8) {
@@ -277,7 +315,6 @@ pub mod test {
 
         ppu.read_data_register(); //load into_buffer
         assert_eq!(ppu.read_data_register(), 0x66);
-        // assert_eq!(ppu.addr.read(), 0x0306)
     }
 
     #[test]

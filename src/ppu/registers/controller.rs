@@ -35,6 +35,12 @@ impl ControlRegister {
         }
     }
 
+    /// The guide just sets `self.bits = ...` but since bitflags 2.0 this functionality does not exist anymore.
+    /// Since I cannot just set `self = ...` I slightly adjusted the data struct
+    pub fn update(&mut self, data: u8) {
+        self.status = ControlRegisterFlags::from_bits_truncate(data);
+    }
+
     pub fn get_vram_addr_increment_value(&self) -> u8 {
         if !self
             .status
@@ -46,9 +52,7 @@ impl ControlRegister {
         }
     }
 
-    /// The guide just sets `self.bits = ...` but since bitflags 2.0 this functionality does not exist anymore.
-    /// Since I cannot just set `self = ...` I slightly adjusted the data struct
-    pub fn update(&mut self, data: u8) {
-        self.status = ControlRegisterFlags::from_bits_truncate(data);
+    pub fn generate_vblank_nmi(&self) -> bool {
+        self.status.contains(ControlRegisterFlags::GENERATE_NMI)
     }
 }

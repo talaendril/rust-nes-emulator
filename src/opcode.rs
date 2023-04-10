@@ -149,7 +149,6 @@ pub struct OpCode {
 impl OpCode {
     fn new(
         code: u8,
-        // mnemonic: &'static str,
         mnemonic: Mnemonic,
         bytes: u8,
         cycles: u8,
@@ -335,14 +334,14 @@ lazy_static! {
 
         // BRANCHING
         OpCode::new(0x00, Mnemonic::BRK, 1, 7, AddressingMode::Implied),
-        OpCode::new(0x10, Mnemonic::BPL, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0x30, Mnemonic::BMI, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0x50, Mnemonic::BVC, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0x70, Mnemonic::BVS, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0x90, Mnemonic::BCC, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0xb0, Mnemonic::BCS, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0xd0, Mnemonic::BNE, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
-        OpCode::new(0xf0, Mnemonic::BEQ, 2, 2 /*2 (+1 if branch succeeds+2 if to a new page)*/, AddressingMode::Relative),
+        OpCode::new(0x10, Mnemonic::BPL, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0x30, Mnemonic::BMI, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0x50, Mnemonic::BVC, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0x70, Mnemonic::BVS, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0x90, Mnemonic::BCC, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0xb0, Mnemonic::BCS, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0xd0, Mnemonic::BNE, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
+        OpCode::new(0xf0, Mnemonic::BEQ, 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative),
 
         // JUMPS
         OpCode::new(0x4c, Mnemonic::JMP, 3, 3, AddressingMode::Absolute),
