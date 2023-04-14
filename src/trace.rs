@@ -3,6 +3,17 @@ use crate::{
     opcode::{self, AddressingMode},
 };
 
+fn check_against_forbidden_addresses(addr: u16) -> bool {
+    let ppu_write_only_registers = vec![0x2000, 0x2001, 0x2003, 0x2005, 0x2006, 0x4014];
+    let forbidden_addresses = [
+        (0x3000..=0x3eff).collect::<Vec<u16>>(),
+        ppu_write_only_registers,
+    ]
+    .concat();
+
+    forbidden_addresses.contains(&addr)
+}
+
 pub fn trace(cpu: &mut CPU) -> String {
     let opcodes = &(*opcode::OPCODES_MAP);
 
@@ -20,6 +31,9 @@ pub fn trace(cpu: &mut CPU) -> String {
         | AddressingMode::Implied => (0, 0),
         _ => {
             let (addr, _) = cpu.get_absolute_address(&ops.addressing_mode, begin + 1);
+            if check_against_forbidden_addresses(addr) {
+                return format!("Addr {:#06x} is forbidden.", addr);
+            }
             (addr, cpu.mem_read(addr))
         }
     };
@@ -31,7 +45,9 @@ pub fn trace(cpu: &mut CPU) -> String {
         },
         2 => {
             let address: u8 = cpu.mem_read(begin + 1);
-            // let value = cpu.mem_read(address));
+            if check_against_forbidden_addresses(address as u16) {
+                return format!("Addr {} is forbidden.", address);
+            }
             hex_dump.push(address);
 
             match ops.addressing_mode {
@@ -148,7 +164,7 @@ mod test {
 
     #[test]
     fn test_format_trace() {
-        let mut bus = Bus::new(test_rom(None));
+        let mut bus = Bus::new(test_rom(None), |_| ());
         bus.mem_write(100, 0xa2);
         bus.mem_write(101, 0x01);
         bus.mem_write(102, 0xca);
@@ -180,7 +196,7 @@ mod test {
 
     #[test]
     fn test_format_mem_access() {
-        let mut bus = Bus::new(test_rom(None));
+        let mut bus = Bus::new(test_rom(None), |_| ());
         // ORA ($33), Y
         bus.mem_write(100, 0x11);
         bus.mem_write(101, 0x33);

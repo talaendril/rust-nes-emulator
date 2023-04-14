@@ -48,15 +48,19 @@ const PPU_DIRECT_MEMORY_ACCESS_REGISTER: u16 = 0x4014;
 const PRG_ROM: u16 = 0x8000;
 const PRG_ROM_END: u16 = 0xFFFF;
 
-pub struct Bus {
+pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
     ppu: NesPPU,
     cycles: usize,
+    gameloop_callback: Box<dyn FnMut(&NesPPU) + 'call>,
 }
 
-impl Bus {
-    pub fn new(rom: Rom) -> Self {
+impl<'a> Bus<'a> {
+    pub fn new<'call, F>(rom: Rom, gameloop_callback: F) -> Bus<'call>
+    where
+        F: FnMut(&NesPPU) + 'call,
+    {
         let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring);
 
         Bus {
@@ -64,12 +68,19 @@ impl Bus {
             prg_rom: rom.prg_rom,
             ppu,
             cycles: 0,
+            gameloop_callback: Box::from(gameloop_callback),
         }
     }
 
     pub fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
+        let nmi_before = self.ppu.is_nmi_interrupt_some();
         self.ppu.tick(cycles * 3); // times 3 since the PPU clock ticks 3 times faster
+        let nmi_after = self.ppu.is_nmi_interrupt_some();
+
+        if !nmi_before && nmi_after {
+            (self.gameloop_callback)(&self.ppu);
+        }
     }
 
     pub fn poll_nmi_status(&mut self) -> Option<u8> {
@@ -88,7 +99,7 @@ impl Bus {
     }
 }
 
-impl Mem for Bus {
+impl Mem for Bus<'_> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             // this matches any address that satisfies: RAM <= addr <= RAM_MIRRORS_END

@@ -90,6 +90,10 @@ impl NesPPU {
         self.nmi_interrupt.take()
     }
 
+    pub fn is_nmi_interrupt_some(&self) -> bool {
+        self.nmi_interrupt.is_some()
+    }
+
     pub fn write_to_ctrl_register(&mut self, bits: u8) {
         let before_nmi_status = self.ctrl.generate_vblank_nmi();
         self.ctrl.update(bits);
@@ -150,19 +154,6 @@ impl NesPPU {
         self.addr
             .increment(self.ctrl.get_vram_addr_increment_value());
     }
-
-    /// This function is a bit of a cheat, it's usually part of the register at 0x4014 called OAM Direct Memory Access Register.
-    /// The actual OAM Data Register doesn't seem to be used by most games properly and they rather use this way to write data into memory.
-    /// Preferably I would like to extract this into its own file and struct but I need the [`OamDataRegister`] internal memory.
-    /// I'll keep it as TODO for now.
-    /// Currently only used for tests, should probably fix at some point.
-    pub fn write_to_oam_dma_register(&mut self, data: &[u8; 256]) {
-        for value in data.iter() {
-            let addr = self.oam_addr.get();
-            self.oam_data.write_data(addr, *value);
-            self.oam_addr.increment_addr();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -176,6 +167,21 @@ pub mod test {
 
         pub fn get_vram_at_address(&self, addr: u16) -> u8 {
             self.vram[addr as usize]
+        }
+    }
+
+    impl NesPPU {
+        /// This function is a bit of a cheat, it's usually part of the register at 0x4014 called OAM Direct Memory Access Register.
+        /// The actual OAM Data Register doesn't seem to be used by most games properly and they rather use this way to write data into memory.
+        /// Preferably I would like to extract this into its own file and struct but I need the [`OamDataRegister`] internal memory.
+        /// Currently only used for tests, so I moved it there, but I should think about where this is properly placed.
+        /// TODO: look at proper place, check if there might a "cleaner" way to implement this
+        pub fn write_to_oam_dma_register(&mut self, data: &[u8; 256]) {
+            for value in data.iter() {
+                let addr = self.oam_addr.get();
+                self.oam_data.write_data(addr, *value);
+                self.oam_addr.increment_addr();
+            }
         }
     }
 

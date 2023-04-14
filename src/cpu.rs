@@ -98,7 +98,7 @@ trait Stack {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-pub struct CPU {
+pub struct CPU<'a> {
     // accumulator
     pub register_a: u8,
     // x register
@@ -112,10 +112,10 @@ pub struct CPU {
     // stack pointer
     pub stack_register: u8,
     // memory is accessed via this bus
-    pub bus: Bus,
+    pub bus: Bus<'a>,
 }
 
-impl Mem for CPU {
+impl Mem for CPU<'_> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
     }
@@ -133,7 +133,7 @@ impl Mem for CPU {
     }
 }
 
-impl Stack for CPU {
+impl Stack for CPU<'_> {
     fn push_to_stack(&mut self, value: u8) {
         self.mem_write(STACK + self.stack_register as u16, value);
         // because 6502 uses a descending stack we need to subtract one from the stack register (or pointer) after the write
@@ -148,7 +148,7 @@ impl Stack for CPU {
 }
 
 /// this impl contains the unofficial op code implementations
-impl CPU {
+impl<'a> CPU<'a> {
     /// Bitwise AND value with Accumulator, set CARRY flag is the result is negative.
     fn aac(&mut self, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
@@ -397,7 +397,7 @@ impl CPU {
 }
 
 /// this impl contains the official op code implementations
-impl CPU {
+impl<'a> CPU<'a> {
     fn add_with_carry(&mut self, value: u8) {
         let sum = self.register_a as u16
             + value as u16
@@ -865,8 +865,8 @@ impl CPU {
     }
 }
 
-impl CPU {
-    pub fn new(bus: Bus) -> Self {
+impl<'a> CPU<'a> {
+    pub fn new(bus: Bus) -> CPU {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -1162,7 +1162,7 @@ mod test {
 
     use crate::cartridge::test;
 
-    impl CPU {
+    impl<'a> CPU<'a> {
         fn reset_and_run(&mut self) {
             self.reset();
             self.program_counter = 0x8000;
@@ -1173,7 +1173,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let value = 0x05;
-        let bus = Bus::new(test::test_rom(Some(vec![0xa9, value, 0x00])));
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, value, 0x00])), |_| ());
         let mut cpu = CPU::new(bus);
 
         cpu.reset_and_run();
@@ -1185,7 +1185,7 @@ mod test {
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
-        let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0x00, 0x00])));
+        let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0x00, 0x00])), |_| ());
         let mut cpu = CPU::new(bus);
         cpu.reset_and_run();
 
@@ -1195,7 +1195,7 @@ mod test {
     #[test]
     fn test_lda_from_memory() {
         let data = 0x55;
-        let bus = Bus::new(test::test_rom(Some(vec![0xa5, 0x10, 0x00])));
+        let bus = Bus::new(test::test_rom(Some(vec![0xa5, 0x10, 0x00])), |_| ());
         let mut cpu = CPU::new(bus);
         cpu.mem_write(0x10, data);
 
@@ -1207,7 +1207,10 @@ mod test {
     #[test]
     fn test_0xaa_tax_transfer_data() {
         let test_value = 5;
-        let bus = Bus::new(test::test_rom(Some(vec![0xa9, test_value, 0xaa, 0x00])));
+        let bus = Bus::new(
+            test::test_rom(Some(vec![0xa9, test_value, 0xaa, 0x00])),
+            |_| (),
+        );
         let mut cpu = CPU::new(bus);
         cpu.reset_and_run();
 
@@ -1218,7 +1221,10 @@ mod test {
 
     #[test]
     fn test_5_ops_working_together() {
-        let bus = Bus::new(test::test_rom(Some(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00])));
+        let bus = Bus::new(
+            test::test_rom(Some(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00])),
+            |_| (),
+        );
         let mut cpu = CPU::new(bus);
         cpu.reset_and_run();
 
@@ -1227,9 +1233,10 @@ mod test {
 
     #[test]
     fn test_inx_overflow() {
-        let bus = Bus::new(test::test_rom(Some(vec![
-            0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00,
-        ])));
+        let bus = Bus::new(
+            test::test_rom(Some(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00])),
+            |_| (),
+        );
         let mut cpu = CPU::new(bus);
         cpu.reset_and_run();
 
@@ -1240,7 +1247,10 @@ mod test {
     fn test_sta_working() {
         let data = 10;
         let addr = 0x0f;
-        let bus = Bus::new(test::test_rom(Some(vec![0xa9, data, 0x85, addr, 0x00])));
+        let bus = Bus::new(
+            test::test_rom(Some(vec![0xa9, data, 0x85, addr, 0x00])),
+            |_| (),
+        );
         let mut cpu = CPU::new(bus);
 
         cpu.reset_and_run();
