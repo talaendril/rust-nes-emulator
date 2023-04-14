@@ -60,20 +60,31 @@ impl NesPPU {
             self.scanline += 1;
 
             // 241st scanline is not visible anymore ans is called vertical overscan
-            if self.scanline == 241 && self.ctrl.generate_vblank_nmi() {
+            if self.scanline == 241 {
                 self.status.set_vblank_started();
-                todo!("Should trigger NMI interrupt")
+                self.status.remove_sprite_zero_hit();
+                if self.ctrl.generate_vblank_nmi() {
+                    self.nmi_interrupt = Some(1);
+                }
+
+                return false;
             }
 
             // per frame 262 scanlines are rendered
             if self.scanline >= 262 {
                 self.scanline = 0;
+                self.nmi_interrupt = None;
+                self.status.remove_sprite_zero_hit();
                 self.status.clear_vblank_started();
                 return true; // frame finished rendering
             }
         }
 
         false
+    }
+
+    pub fn take_nmi_interrupt(&mut self) -> Option<u8> {
+        self.nmi_interrupt.take()
     }
 
     pub fn write_to_ctrl_register(&mut self, bits: u8) {

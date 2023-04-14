@@ -8,6 +8,7 @@ use trace::trace;
 mod bus;
 mod cartridge;
 mod cpu;
+mod interrupt;
 mod opcode;
 mod ppu;
 mod trace;

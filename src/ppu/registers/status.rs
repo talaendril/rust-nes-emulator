@@ -51,6 +51,14 @@ impl StatusRegister {
         self.status.remove(StatusRegisterFlags::VBLANK_STARTED);
     }
 
+    pub fn set_sprite_zero_hit(&mut self) {
+        self.status.insert(StatusRegisterFlags::SPRITE_0_HIT);
+    }
+
+    pub fn remove_sprite_zero_hit(&mut self) {
+        self.status.remove(StatusRegisterFlags::SPRITE_0_HIT);
+    }
+
     pub fn get(&self) -> u8 {
         self.status.bits()
     }

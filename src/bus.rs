@@ -72,8 +72,8 @@ impl Bus {
         self.ppu.tick(cycles * 3); // times 3 since the PPU clock ticks 3 times faster
     }
 
-    pub fn poll_nmi_status(&self) -> Option<u8> {
-        todo!()
+    pub fn poll_nmi_status(&mut self) -> Option<u8> {
+        self.ppu.take_nmi_interrupt()
     }
 
     /// PRG Rom Size might be 16 KiB or 32 KiB.

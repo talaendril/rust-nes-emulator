@@ -13,6 +13,7 @@ use bitflags::bitflags;
 
 use crate::{
     bus::Bus,
+    interrupt::{Interrupt, BRK, NMI},
     opcode::{self, AddressingMode, Mnemonic, OpCode},
 };
 
@@ -395,295 +396,8 @@ impl CPU {
     }
 }
 
+/// this impl contains the official op code implementations
 impl CPU {
-    pub fn new(bus: Bus) -> Self {
-        CPU {
-            register_a: 0,
-            register_x: 0,
-            register_y: 0,
-            status: CpuFlags::from_bits_truncate(0b100100), // break and interrupt disable should be set
-            program_counter: 0,
-            stack_register: STACK_RESET,
-            bus,
-        }
-    }
-
-    /// This function gets called on the RESET INTERRUPT signal.
-    /// It resets all registers and sets the program counter to the value in address 0xFFFC.
-    pub fn reset(&mut self) {
-        self.register_a = 0;
-        self.register_x = 0;
-        self.register_y = 0;
-        self.stack_register = STACK_RESET;
-        self.status = CpuFlags::from_bits_truncate(0b100100);
-
-        // we don't need to actually set the address of the program_counter anymore because the ROM handles that
-        // now I have no idea where the program_counter is actually stored but the guide reads it at 0x8600
-        // the internet says something like this: PC = byte at $FFFD * 256 + byte at $FFFC
-        // reference: https://forums.nesdev.org/viewtopic.php?t=3677
-        self.program_counter = self.mem_read_u16(PROGRAM_INIT_ADDR);
-    }
-
-    /// Get the instruction opcode from memory and exectute accordingly.
-    pub fn run_with_callback<F>(&mut self, mut callback: F)
-    where
-        F: FnMut(&mut CPU),
-    {
-        let opcodes = &(*opcode::OPCODES_MAP);
-
-        loop {
-            callback(self);
-
-            if let Some(_nmi) = self.bus.poll_nmi_status() {
-                self.interrupt_nmi();
-            }
-
-            let code = self.mem_read(self.program_counter);
-            self.program_counter += 1;
-            let program_counter_state = self.program_counter;
-
-            let opcode = opcodes
-                .get(&code)
-                .unwrap_or_else(|| panic!("OpCode {:x} is not recognized", code));
-
-            match opcode.mnemonic {
-                Mnemonic::ADC => self.adc(&opcode.addressing_mode),
-                Mnemonic::AND => self.and(&opcode.addressing_mode),
-                Mnemonic::ASL => self.asl(&opcode.addressing_mode),
-                Mnemonic::BIT => self.bit(&opcode.addressing_mode),
-                Mnemonic::DEC => self.dec(&opcode.addressing_mode),
-                Mnemonic::DEX => self.dex(),
-                Mnemonic::DEY => self.dey(),
-                Mnemonic::EOR => self.eor(&opcode.addressing_mode),
-                Mnemonic::INC => self.inc(&opcode.addressing_mode),
-                Mnemonic::INX => self.inx(),
-                Mnemonic::INY => self.iny(),
-                Mnemonic::LDA => self.lda(&opcode.addressing_mode),
-                Mnemonic::LDX => self.ldx(&opcode.addressing_mode),
-                Mnemonic::LDY => self.ldy(&opcode.addressing_mode),
-                Mnemonic::LSR => self.lsr(&opcode.addressing_mode),
-                Mnemonic::NOP => (), // noop
-                Mnemonic::ORA => self.ora(&opcode.addressing_mode),
-                Mnemonic::ROL => self.rol(&opcode.addressing_mode),
-                Mnemonic::ROR => self.ror(&opcode.addressing_mode),
-                Mnemonic::SBC => self.sbc(&opcode.addressing_mode),
-                Mnemonic::STA => self.sta(&opcode.addressing_mode),
-                Mnemonic::STX => self.stx(&opcode.addressing_mode),
-                Mnemonic::STY => self.sty(&opcode.addressing_mode),
-                Mnemonic::TAX => self.tax(),
-                Mnemonic::TAY => self.tay(),
-                Mnemonic::TXA => self.txa(),
-                Mnemonic::TYA => self.tya(),
-                Mnemonic::TSX => self.tsx(),
-                Mnemonic::TXS => self.txs(),
-
-                // Stack
-                Mnemonic::PHA => self.pha(),
-                Mnemonic::PHP => self.php(),
-                Mnemonic::PLA => self.pla(),
-                Mnemonic::PLP => self.plp(),
-
-                // Subroutine
-                Mnemonic::JSR => self.jsr(opcode),
-                Mnemonic::RTI => self.rti(),
-                Mnemonic::RTS => self.rts(),
-
-                // Compare
-                Mnemonic::CMP => self.compare(&opcode.addressing_mode, self.register_a),
-                Mnemonic::CPX => self.compare(&opcode.addressing_mode, self.register_x),
-                Mnemonic::CPY => self.compare(&opcode.addressing_mode, self.register_y),
-
-                // Branching
-                Mnemonic::BRK => return, // TODO: this should trigger a BRK interrupt, see: https://www.nesdev.org/wiki/CPU_interrupts
-                Mnemonic::JMP => self.jump(&opcode.addressing_mode),
-                Mnemonic::BPL => self.branch(!self.status.contains(CpuFlags::NEGATIV)),
-                Mnemonic::BMI => self.branch(self.status.contains(CpuFlags::NEGATIV)),
-                Mnemonic::BVC => self.branch(!self.status.contains(CpuFlags::OVERFLOW)),
-                Mnemonic::BVS => self.branch(self.status.contains(CpuFlags::OVERFLOW)),
-                Mnemonic::BCC => self.branch(!self.status.contains(CpuFlags::CARRY)),
-                Mnemonic::BCS => self.branch(self.status.contains(CpuFlags::CARRY)),
-                Mnemonic::BNE => self.branch(!self.status.contains(CpuFlags::ZERO)),
-                Mnemonic::BEQ => self.branch(self.status.contains(CpuFlags::ZERO)),
-
-                // Sets
-                Mnemonic::SEC => self.status.insert(CpuFlags::CARRY),
-                Mnemonic::SEI => self.status.insert(CpuFlags::INTERRUPT_DISABLE),
-                Mnemonic::SED => self.status.insert(CpuFlags::DECIMAL_MODE),
-
-                // Clears
-                Mnemonic::CLC => self.status.remove(CpuFlags::CARRY),
-                Mnemonic::CLI => self.status.remove(CpuFlags::INTERRUPT_DISABLE),
-                Mnemonic::CLV => self.status.remove(CpuFlags::OVERFLOW),
-                Mnemonic::CLD => self.status.remove(CpuFlags::DECIMAL_MODE), // we ignore decimal mode but I just added it anyway
-
-                // Unofficial
-                Mnemonic::AAC_Unofficial => self.aac(&opcode.addressing_mode),
-                Mnemonic::AAX_Unofficial => self.aax(&opcode.addressing_mode),
-                Mnemonic::ARR_Unofficial => self.aar(&opcode.addressing_mode),
-                Mnemonic::ASR_Unofficial => self.asr(&opcode.addressing_mode),
-                Mnemonic::ATX_Unofficial => self.atx(&opcode.addressing_mode),
-                Mnemonic::AXA_Unofficial => self.axa(&opcode.addressing_mode),
-                Mnemonic::AXS_Unofficial => self.axs(&opcode.addressing_mode),
-                Mnemonic::DCP_Unofficial => self.dcp(&opcode.addressing_mode),
-                Mnemonic::DOP_Unofficial => (),
-                Mnemonic::ISC_Unofficial => self.isc(&opcode.addressing_mode),
-                Mnemonic::KIL_Unofficial => (), // seems to be treated the same as NOPs but I don't know, every reference mentions something about halting and setting data bus to a 0xFF
-                Mnemonic::LAR_Unofficial => self.lar(&opcode.addressing_mode),
-                Mnemonic::LAX_Unofficial => self.lax(&opcode.addressing_mode),
-                Mnemonic::NOP_Unofficial => (),
-                Mnemonic::RLA_Unofficial => self.rla(&opcode.addressing_mode),
-                Mnemonic::RRA_Unofficial => self.rra(&opcode.addressing_mode),
-                Mnemonic::SBC_Unofficial => self.unofficial_sbc(&opcode.addressing_mode),
-                Mnemonic::SLO_Unofficial => self.slo(&opcode.addressing_mode),
-                Mnemonic::SRE_Unofficial => self.sre(&opcode.addressing_mode),
-                Mnemonic::SXA_Unofficial => self.sxa(&opcode.addressing_mode),
-                Mnemonic::SYA_Unofficial => self.sya(&opcode.addressing_mode),
-                Mnemonic::TOP_Unofficial => self.top(&opcode.addressing_mode),
-                Mnemonic::XAA_Unofficial => self.xaa(&opcode.addressing_mode),
-                Mnemonic::XAS_Unofficial => self.xas(&opcode.addressing_mode),
-            }
-
-            // TODO: add cycles if page crossed or when successful branching
-            self.bus.tick(opcode.cycles);
-
-            // prevent updating of program_counter after branches/jumps
-            if program_counter_state == self.program_counter {
-                self.program_counter += (opcode.bytes - 1) as u16;
-            }
-        }
-    }
-
-    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> (u16, bool) {
-        fn crossed_page(addr1: u16, addr2: u16) -> bool {
-            addr1 & 0xFF00 != addr2 & 0xFF00
-        }
-
-        match mode {
-            AddressingMode::Immediate => (addr, false),
-            AddressingMode::ZeroPage => (self.mem_read(addr) as u16, false),
-            AddressingMode::ZeroPageX => {
-                let pos = self.mem_read(addr);
-                (pos.wrapping_add(self.register_x) as u16, false)
-            }
-            AddressingMode::ZeroPageY => {
-                let pos = self.mem_read(addr);
-                (pos.wrapping_add(self.register_y) as u16, false)
-            }
-            AddressingMode::Absolute => (self.mem_read_u16(addr), false),
-            AddressingMode::AbsoluteX => {
-                let base = self.mem_read_u16(addr);
-                let ret_addr = base.wrapping_add(self.register_x as u16);
-                (ret_addr, crossed_page(base, ret_addr))
-            }
-            AddressingMode::AbsoluteY => {
-                let base = self.mem_read_u16(addr);
-                let ret_addr = base.wrapping_add(self.register_y as u16);
-                (ret_addr, crossed_page(base, ret_addr))
-            }
-            // JMP is the only instruction to use Indirect AddressingMode in the 6502
-            AddressingMode::Indirect => {
-                let base = self.mem_read_u16(addr);
-                // http://www.6502.org/tutorials/6502opcodes.html#JMP => an indirect jump must never use a vector beginning on the last byte of a page
-                // Note: 16 bit address space consists of 256 pages of 1 byte memory locations
-                // this means we are on the last byte of a page (0x00FF masking means last byte of this page)
-                if base & 0x00FF == 0x00FF {
-                    let lo = self.mem_read(base);
-                    let hi = self.mem_read(base & 0xFF00);
-                    (u16::from_le_bytes([lo, hi]), false)
-                } else {
-                    (self.mem_read_u16(base), false)
-                }
-            }
-            AddressingMode::IndirectX => {
-                let base = self.mem_read(addr);
-                let ptr = base.wrapping_add(self.register_x);
-                let lo = self.mem_read(ptr as u16);
-                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
-                (u16::from_le_bytes([lo, hi]), false)
-            }
-            AddressingMode::IndirectY => {
-                let base = self.mem_read(addr);
-                let lo = self.mem_read(base as u16);
-                let hi = self.mem_read(base.wrapping_add(1) as u16);
-                let deref_base = u16::from_le_bytes([lo, hi]);
-                let ret_addr = deref_base.wrapping_add(self.register_y as u16);
-                (ret_addr, crossed_page(deref_base, ret_addr))
-            }
-            // these modes are handled differently, we don't want this branch to be called so we panic.
-            AddressingMode::Accumulator | AddressingMode::Relative | AddressingMode::Implied => panic!(
-                "opcodes using mode {:?} are not supported within this function and should be handled separately",
-                mode
-            )
-        }
-    }
-
-    /// Returns address for a corresponding [`AddressingMode`].
-    /// Address is derived from the [`progam_counter`](CPU) of CPU.
-    fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
-        self.get_absolute_address(mode, self.program_counter)
-    }
-
-    /// Stores the program_couinter and status flag on the stack.
-    /// Loads address of interrupt handler from 0xFFFA and sets the program_counter to that address.
-    fn interrupt_nmi(&mut self) {
-        self.push_to_stack_u16(self.program_counter);
-
-        let mut flag = self.status.clone();
-        flag.remove(CpuFlags::BREAK); // flag.set(CpuFlags::BREAK, false);
-        flag.insert(CpuFlags::BREAK2); // flag.set(CpuFlags::BREAK2, true);
-
-        self.push_to_stack(flag.bits());
-        self.status.insert(CpuFlags::INTERRUPT_DISABLE);
-
-        self.bus.tick(2);
-        self.program_counter = self.mem_read_u16(0xfffa);
-    }
-
-    fn get_accumulator_or_memory(&mut self, mode: &AddressingMode) -> (u8, Option<u16>) {
-        if let AddressingMode::Accumulator = mode {
-            (self.register_a, None)
-        } else {
-            let (addr, _) = self.get_operand_address(mode);
-            (self.mem_read(addr), Some(addr))
-        }
-    }
-
-    fn set_register_a(&mut self, value: u8) {
-        self.register_a = value;
-        self.set_zero_flag_with(self.register_a);
-        self.set_negative_flag_with(self.register_a);
-    }
-
-    fn set_register_x(&mut self, value: u8) {
-        self.register_x = value;
-        self.set_zero_flag_with(self.register_x);
-        self.set_negative_flag_with(self.register_x);
-    }
-
-    fn set_register_y(&mut self, value: u8) {
-        self.register_y = value;
-        self.set_zero_flag_with(self.register_y);
-        self.set_negative_flag_with(self.register_y);
-    }
-
-    fn set_zero_flag_with(&mut self, register_value: u8) {
-        // this sets/unsets the ZERO FLAG while keeping all other flags
-        if register_value == 0 {
-            self.status.insert(CpuFlags::ZERO);
-        } else {
-            self.status.remove(CpuFlags::ZERO);
-        }
-    }
-
-    fn set_negative_flag_with(&mut self, register_value: u8) {
-        // this sets/unsets the NEGATIVE FLAG if the final bit is set
-        if register_value & 0b1000_0000 != 0 {
-            self.status.insert(CpuFlags::NEGATIV);
-        } else {
-            self.status.remove(CpuFlags::NEGATIV);
-        }
-    }
-
     fn add_with_carry(&mut self, value: u8) {
         let sum = self.register_a as u16
             + value as u16
@@ -1113,6 +827,13 @@ impl CPU {
         }
     }
 
+    fn brk(&mut self) {
+        self.program_counter = self.program_counter.wrapping_add(1); // TODO: guide uses `+=`
+        if !self.status.contains(CpuFlags::INTERRUPT_DISABLE) {
+            self.interrupt(BRK);
+        }
+    }
+
     /// Jumps to the memory address value calculated with `mode`.
     /// A bit of a different one, because it has the INDIRECT addressing mode.
     /// This mode means that the address to jump to is stored in the address that is supplied as
@@ -1141,6 +862,298 @@ impl CPU {
         self.status.set(CpuFlags::CARRY, compare_to >= value);
         self.set_zero_flag_with(compare_to.wrapping_sub(value));
         self.set_negative_flag_with(compare_to.wrapping_sub(value));
+    }
+}
+
+impl CPU {
+    pub fn new(bus: Bus) -> Self {
+        CPU {
+            register_a: 0,
+            register_x: 0,
+            register_y: 0,
+            status: CpuFlags::from_bits_truncate(0b100100), // break and interrupt disable should be set
+            program_counter: 0,
+            stack_register: STACK_RESET,
+            bus,
+        }
+    }
+
+    /// This function gets called on the RESET INTERRUPT signal.
+    /// It resets all registers and sets the program counter to the value in address 0xFFFC.
+    pub fn reset(&mut self) {
+        self.register_a = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.stack_register = STACK_RESET;
+        self.status = CpuFlags::from_bits_truncate(0b100100);
+
+        // we don't need to actually set the address of the program_counter anymore because the ROM handles that
+        // now I have no idea where the program_counter is actually stored but the guide reads it at 0x8600
+        // the internet says something like this: PC = byte at $FFFD * 256 + byte at $FFFC
+        // reference: https://forums.nesdev.org/viewtopic.php?t=3677
+        self.program_counter = self.mem_read_u16(PROGRAM_INIT_ADDR);
+    }
+
+    /// Get the instruction opcode from memory and exectute accordingly.
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
+        let opcodes = &(*opcode::OPCODES_MAP);
+
+        loop {
+            callback(self);
+
+            if let Some(_nmi) = self.bus.poll_nmi_status() {
+                self.interrupt(NMI);
+            }
+
+            let code = self.mem_read(self.program_counter);
+            self.program_counter = self.program_counter.wrapping_add(1); // TODO: guide uses `+=`
+            let program_counter_state = self.program_counter;
+
+            let opcode = opcodes
+                .get(&code)
+                .unwrap_or_else(|| panic!("OpCode {:x} is not recognized", code));
+
+            match opcode.mnemonic {
+                Mnemonic::ADC => self.adc(&opcode.addressing_mode),
+                Mnemonic::AND => self.and(&opcode.addressing_mode),
+                Mnemonic::ASL => self.asl(&opcode.addressing_mode),
+                Mnemonic::BIT => self.bit(&opcode.addressing_mode),
+                Mnemonic::DEC => self.dec(&opcode.addressing_mode),
+                Mnemonic::DEX => self.dex(),
+                Mnemonic::DEY => self.dey(),
+                Mnemonic::EOR => self.eor(&opcode.addressing_mode),
+                Mnemonic::INC => self.inc(&opcode.addressing_mode),
+                Mnemonic::INX => self.inx(),
+                Mnemonic::INY => self.iny(),
+                Mnemonic::LDA => self.lda(&opcode.addressing_mode),
+                Mnemonic::LDX => self.ldx(&opcode.addressing_mode),
+                Mnemonic::LDY => self.ldy(&opcode.addressing_mode),
+                Mnemonic::LSR => self.lsr(&opcode.addressing_mode),
+                Mnemonic::NOP => (), // noop
+                Mnemonic::ORA => self.ora(&opcode.addressing_mode),
+                Mnemonic::ROL => self.rol(&opcode.addressing_mode),
+                Mnemonic::ROR => self.ror(&opcode.addressing_mode),
+                Mnemonic::SBC => self.sbc(&opcode.addressing_mode),
+                Mnemonic::STA => self.sta(&opcode.addressing_mode),
+                Mnemonic::STX => self.stx(&opcode.addressing_mode),
+                Mnemonic::STY => self.sty(&opcode.addressing_mode),
+                Mnemonic::TAX => self.tax(),
+                Mnemonic::TAY => self.tay(),
+                Mnemonic::TXA => self.txa(),
+                Mnemonic::TYA => self.tya(),
+                Mnemonic::TSX => self.tsx(),
+                Mnemonic::TXS => self.txs(),
+
+                // Stack
+                Mnemonic::PHA => self.pha(),
+                Mnemonic::PHP => self.php(),
+                Mnemonic::PLA => self.pla(),
+                Mnemonic::PLP => self.plp(),
+
+                // Subroutine
+                Mnemonic::JSR => self.jsr(opcode),
+                Mnemonic::RTI => self.rti(),
+                Mnemonic::RTS => self.rts(),
+
+                // Compare
+                Mnemonic::CMP => self.compare(&opcode.addressing_mode, self.register_a),
+                Mnemonic::CPX => self.compare(&opcode.addressing_mode, self.register_x),
+                Mnemonic::CPY => self.compare(&opcode.addressing_mode, self.register_y),
+
+                // Branching
+                // Mnemonic::BRK => self.brk(), // this should trigger a BRK interrupt, see: https://www.nesdev.org/wiki/CPU_interrupts
+                Mnemonic::BRK => return, // for testing purposes
+                Mnemonic::JMP => self.jump(&opcode.addressing_mode),
+                Mnemonic::BPL => self.branch(!self.status.contains(CpuFlags::NEGATIV)),
+                Mnemonic::BMI => self.branch(self.status.contains(CpuFlags::NEGATIV)),
+                Mnemonic::BVC => self.branch(!self.status.contains(CpuFlags::OVERFLOW)),
+                Mnemonic::BVS => self.branch(self.status.contains(CpuFlags::OVERFLOW)),
+                Mnemonic::BCC => self.branch(!self.status.contains(CpuFlags::CARRY)),
+                Mnemonic::BCS => self.branch(self.status.contains(CpuFlags::CARRY)),
+                Mnemonic::BNE => self.branch(!self.status.contains(CpuFlags::ZERO)),
+                Mnemonic::BEQ => self.branch(self.status.contains(CpuFlags::ZERO)),
+
+                // Sets
+                Mnemonic::SEC => self.status.insert(CpuFlags::CARRY),
+                Mnemonic::SEI => self.status.insert(CpuFlags::INTERRUPT_DISABLE),
+                Mnemonic::SED => self.status.insert(CpuFlags::DECIMAL_MODE),
+
+                // Clears
+                Mnemonic::CLC => self.status.remove(CpuFlags::CARRY),
+                Mnemonic::CLI => self.status.remove(CpuFlags::INTERRUPT_DISABLE),
+                Mnemonic::CLV => self.status.remove(CpuFlags::OVERFLOW),
+                Mnemonic::CLD => self.status.remove(CpuFlags::DECIMAL_MODE), // we ignore decimal mode but I just added it anyway
+
+                // Unofficial
+                Mnemonic::AAC_Unofficial => self.aac(&opcode.addressing_mode),
+                Mnemonic::AAX_Unofficial => self.aax(&opcode.addressing_mode),
+                Mnemonic::ARR_Unofficial => self.aar(&opcode.addressing_mode),
+                Mnemonic::ASR_Unofficial => self.asr(&opcode.addressing_mode),
+                Mnemonic::ATX_Unofficial => self.atx(&opcode.addressing_mode),
+                Mnemonic::AXA_Unofficial => self.axa(&opcode.addressing_mode),
+                Mnemonic::AXS_Unofficial => self.axs(&opcode.addressing_mode),
+                Mnemonic::DCP_Unofficial => self.dcp(&opcode.addressing_mode),
+                Mnemonic::DOP_Unofficial => (),
+                Mnemonic::ISC_Unofficial => self.isc(&opcode.addressing_mode),
+                Mnemonic::KIL_Unofficial => (), // seems to be treated the same as NOPs but I don't know, every reference mentions something about halting and setting data bus to a 0xFF
+                Mnemonic::LAR_Unofficial => self.lar(&opcode.addressing_mode),
+                Mnemonic::LAX_Unofficial => self.lax(&opcode.addressing_mode),
+                Mnemonic::NOP_Unofficial => (),
+                Mnemonic::RLA_Unofficial => self.rla(&opcode.addressing_mode),
+                Mnemonic::RRA_Unofficial => self.rra(&opcode.addressing_mode),
+                Mnemonic::SBC_Unofficial => self.unofficial_sbc(&opcode.addressing_mode),
+                Mnemonic::SLO_Unofficial => self.slo(&opcode.addressing_mode),
+                Mnemonic::SRE_Unofficial => self.sre(&opcode.addressing_mode),
+                Mnemonic::SXA_Unofficial => self.sxa(&opcode.addressing_mode),
+                Mnemonic::SYA_Unofficial => self.sya(&opcode.addressing_mode),
+                Mnemonic::TOP_Unofficial => self.top(&opcode.addressing_mode),
+                Mnemonic::XAA_Unofficial => self.xaa(&opcode.addressing_mode),
+                Mnemonic::XAS_Unofficial => self.xas(&opcode.addressing_mode),
+            }
+
+            // TODO: add cycles if page crossed or when successful branching
+            self.bus.tick(opcode.cycles);
+
+            // prevent updating of program_counter after branches/jumps
+            if program_counter_state == self.program_counter {
+                // TODO: guide uses `+=`
+                self.program_counter = self.program_counter.wrapping_add((opcode.bytes - 1) as u16);
+            }
+        }
+    }
+
+    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> (u16, bool) {
+        fn crossed_page(addr1: u16, addr2: u16) -> bool {
+            addr1 & 0xFF00 != addr2 & 0xFF00
+        }
+
+        match mode {
+            AddressingMode::Immediate => (addr, false),
+            AddressingMode::ZeroPage => (self.mem_read(addr) as u16, false),
+            AddressingMode::ZeroPageX => {
+                let pos = self.mem_read(addr);
+                (pos.wrapping_add(self.register_x) as u16, false)
+            }
+            AddressingMode::ZeroPageY => {
+                let pos = self.mem_read(addr);
+                (pos.wrapping_add(self.register_y) as u16, false)
+            }
+            AddressingMode::Absolute => (self.mem_read_u16(addr), false),
+            AddressingMode::AbsoluteX => {
+                let base = self.mem_read_u16(addr);
+                let ret_addr = base.wrapping_add(self.register_x as u16);
+                (ret_addr, crossed_page(base, ret_addr))
+            }
+            AddressingMode::AbsoluteY => {
+                let base = self.mem_read_u16(addr);
+                let ret_addr = base.wrapping_add(self.register_y as u16);
+                (ret_addr, crossed_page(base, ret_addr))
+            }
+            // JMP is the only instruction to use Indirect AddressingMode in the 6502
+            AddressingMode::Indirect => {
+                let base = self.mem_read_u16(addr);
+                // http://www.6502.org/tutorials/6502opcodes.html#JMP => an indirect jump must never use a vector beginning on the last byte of a page
+                // Note: 16 bit address space consists of 256 pages of 1 byte memory locations
+                // this means we are on the last byte of a page (0x00FF masking means last byte of this page)
+                if base & 0x00FF == 0x00FF {
+                    let lo = self.mem_read(base);
+                    let hi = self.mem_read(base & 0xFF00);
+                    (u16::from_le_bytes([lo, hi]), false)
+                } else {
+                    (self.mem_read_u16(base), false)
+                }
+            }
+            AddressingMode::IndirectX => {
+                let base = self.mem_read(addr);
+                let ptr = base.wrapping_add(self.register_x);
+                let lo = self.mem_read(ptr as u16);
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
+                (u16::from_le_bytes([lo, hi]), false)
+            }
+            AddressingMode::IndirectY => {
+                let base = self.mem_read(addr);
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read(base.wrapping_add(1) as u16);
+                let deref_base = u16::from_le_bytes([lo, hi]);
+                let ret_addr = deref_base.wrapping_add(self.register_y as u16);
+                (ret_addr, crossed_page(deref_base, ret_addr))
+            }
+            // these modes are handled differently, we don't want this branch to be called so we panic.
+            AddressingMode::Accumulator | AddressingMode::Relative | AddressingMode::Implied => panic!(
+                "opcodes using mode {:?} are not supported within this function and should be handled separately",
+                mode
+            )
+        }
+    }
+
+    /// Returns address for a corresponding [`AddressingMode`].
+    /// Address is derived from the [`progam_counter`](CPU) of CPU.
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
+        self.get_absolute_address(mode, self.program_counter)
+    }
+
+    /// Stores the program_couinter and status flag on the stack.
+    /// Loads address of interrupt handler and sets the program_counter to that address.
+    fn interrupt(&mut self, interrupt: Interrupt) {
+        self.push_to_stack_u16(self.program_counter);
+
+        let mut flag = self.status.clone();
+        flag.set(CpuFlags::BREAK, interrupt.b_flag_mask & 0b0001_0000 != 0);
+        flag.set(CpuFlags::BREAK2, interrupt.b_flag_mask & 0b0010_0000 != 0);
+
+        self.push_to_stack(flag.bits());
+        self.status.insert(CpuFlags::INTERRUPT_DISABLE);
+
+        self.bus.tick(interrupt.cpu_cycles);
+        self.program_counter = self.mem_read_u16(interrupt.vector_addr);
+    }
+
+    fn get_accumulator_or_memory(&mut self, mode: &AddressingMode) -> (u8, Option<u16>) {
+        if let AddressingMode::Accumulator = mode {
+            (self.register_a, None)
+        } else {
+            let (addr, _) = self.get_operand_address(mode);
+            (self.mem_read(addr), Some(addr))
+        }
+    }
+
+    fn set_register_a(&mut self, value: u8) {
+        self.register_a = value;
+        self.set_zero_flag_with(self.register_a);
+        self.set_negative_flag_with(self.register_a);
+    }
+
+    fn set_register_x(&mut self, value: u8) {
+        self.register_x = value;
+        self.set_zero_flag_with(self.register_x);
+        self.set_negative_flag_with(self.register_x);
+    }
+
+    fn set_register_y(&mut self, value: u8) {
+        self.register_y = value;
+        self.set_zero_flag_with(self.register_y);
+        self.set_negative_flag_with(self.register_y);
+    }
+
+    fn set_zero_flag_with(&mut self, register_value: u8) {
+        // this sets/unsets the ZERO FLAG while keeping all other flags
+        if register_value == 0 {
+            self.status.insert(CpuFlags::ZERO);
+        } else {
+            self.status.remove(CpuFlags::ZERO);
+        }
+    }
+
+    fn set_negative_flag_with(&mut self, register_value: u8) {
+        // this sets/unsets the NEGATIVE FLAG if the final bit is set
+        if register_value & 0b1000_0000 != 0 {
+            self.status.insert(CpuFlags::NEGATIV);
+        } else {
+            self.status.remove(CpuFlags::NEGATIV);
+        }
     }
 }
 
