@@ -25,11 +25,11 @@ bitflags! {
     }
 }
 
-pub enum Color {
-    Red,
-    Green,
-    Blue,
-}
+// pub enum Color {
+//     Red,
+//     Green,
+//     Blue,
+// }
 
 pub struct MaskRegister {
     status: MaskRegisterFlags,

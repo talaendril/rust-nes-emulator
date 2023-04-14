@@ -15,20 +15,23 @@ pub mod registers;
 use crate::cartridge::Mirroring;
 
 use self::registers::{
-    address::AddrRegister, controller::ControlRegister, data::DataRegister, mask::MaskRegister,
+    address::AddrRegister, control::ControlRegister, data::DataRegister, mask::MaskRegister,
     oam_address::OamAddressRegister, oam_data::OamDataRegister, scroll::ScrollRegister,
     status::StatusRegister,
 };
 
+/// Note: a few registers are marked with `pub` visiblity.
+/// This is because the emulator needs to intercept the program execution in order to properly draw the screen.
+/// It's not a perfect solution but it's a quick for right now to enable easy read access.
 pub struct NesPPU {
-    ctrl: ControlRegister,        // register at 0x2000, write-only
+    pub ctrl: ControlRegister,    // register at 0x2000, write-only
     mask: MaskRegister,           // register at 0x2001, write-only
     status: StatusRegister,       // register at 0x2002, read-only
     oam_addr: OamAddressRegister, // register at 0x2003, write-only
     oam_data: OamDataRegister,    // register at 0x2004, read and write
     scroll: ScrollRegister,       // register at 0x2005, write-only => write called twice (16-bit)
     addr: AddrRegister,           // register at 0x2006, write-only => write called twice (16-bit)
-    data: DataRegister,           // register at 0x2007, read and write
+    pub data: DataRegister,       // register at 0x2007, read and write
     scanline: u16,
     cycles: usize,
     nmi_interrupt: Option<u8>,
@@ -152,6 +155,7 @@ impl NesPPU {
     /// The actual OAM Data Register doesn't seem to be used by most games properly and they rather use this way to write data into memory.
     /// Preferably I would like to extract this into its own file and struct but I need the [`OamDataRegister`] internal memory.
     /// I'll keep it as TODO for now.
+    /// Currently only used for tests, should probably fix at some point.
     pub fn write_to_oam_dma_register(&mut self, data: &[u8; 256]) {
         for value in data.iter() {
             let addr = self.oam_addr.get();

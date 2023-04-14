@@ -20,6 +20,12 @@ impl DataRegister {
         }
     }
 
+    /// Returns a slice of the `chr_rom` from index `start` to `end` inclusively.
+    /// This function is mainly used a way for the emulator to read the actual ROM to draw the screen.
+    pub fn return_chr_rom_slice(&self, start: usize, end: usize) -> &[u8] {
+        &self.chr_rom[start..=end]
+    }
+
     pub fn read_data(&mut self, addr: u16) -> u8 {
         match addr {
             // pattern tables => chr rom access

@@ -55,4 +55,15 @@ impl ControlRegister {
     pub fn generate_vblank_nmi(&self) -> bool {
         self.status.contains(ControlRegisterFlags::GENERATE_NMI)
     }
+
+    pub fn get_background_pattern_addr(&self) -> u16 {
+        if !self
+            .status
+            .contains(ControlRegisterFlags::BACKROUND_PATTERN_ADDR)
+        {
+            0
+        } else {
+            0x1000
+        }
+    }
 }

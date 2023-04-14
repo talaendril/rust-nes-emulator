@@ -11,6 +11,8 @@ mod cpu;
 mod interrupt;
 mod opcode;
 mod ppu;
+mod render;
+mod tile_viewer;
 mod trace;
 
 fn main() {

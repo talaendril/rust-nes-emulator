@@ -137,6 +137,10 @@ impl Mem for Bus {
             PPU_SCROLL_REGISTER => self.ppu.write_to_scroll_register(data),
             PPU_ADDR_REGISTER => self.ppu.write_to_addr_register(data),
             PPU_DATA_REGISTER => self.ppu.write_to_data_register(data),
+            // TODO:
+            PPU_DIRECT_MEMORY_ACCESS_REGISTER => {
+                println!("Ignoring mem write-access for OAM_DMA register")
+            }
             PPU_REGISTERS_MIRROR_START..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
                 self.mem_write(mirror_down_addr, data);

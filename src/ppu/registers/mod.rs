@@ -1,5 +1,5 @@
 pub mod address;
-pub mod controller;
+pub mod control;
 pub mod data;
 pub mod mask;
 pub mod oam_address;

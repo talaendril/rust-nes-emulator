@@ -965,7 +965,7 @@ impl CPU {
 
                 // Branching
                 // Mnemonic::BRK => self.brk(), // this should trigger a BRK interrupt, see: https://www.nesdev.org/wiki/CPU_interrupts
-                Mnemonic::BRK => return, // for testing purposes
+                Mnemonic::BRK => return, // right now I just BRK to be the program exit though
                 Mnemonic::JMP => self.jump(&opcode.addressing_mode),
                 Mnemonic::BPL => self.branch(!self.status.contains(CpuFlags::NEGATIV)),
                 Mnemonic::BMI => self.branch(self.status.contains(CpuFlags::NEGATIV)),
@@ -1014,7 +1014,6 @@ impl CPU {
                 Mnemonic::XAS_Unofficial => self.xas(&opcode.addressing_mode),
             }
 
-            // TODO: add cycles if page crossed or when successful branching
             self.bus.tick(opcode.cycles);
 
             // prevent updating of program_counter after branches/jumps
