@@ -1,6 +1,12 @@
 # NES Emulator in Rust
 NES Emulator written with this guide: https://bugzmanov.github.io/nes_ebook
 
+## Simple Render Branch
+This branch exists because the guide wanted to do a simple render implementation.
+The author made it a point to say that a lot of the NES games would require a more accurate PPU emulation to work, because
+they use some tricks to work (split-scroll or changing palette colors for instance).
+On this branch the emulator waits for the screen to be fully ready and then reads all that data in one go to render.
+
 ## Requirements
 - rustc >= 1.68.2 with `stable-x86_64-pc-windows-gnu` toolchain (for proper linking without needing VS build tools)
 - SDL2 >= 2.0.8
