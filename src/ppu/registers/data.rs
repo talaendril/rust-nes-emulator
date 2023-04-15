@@ -1,10 +1,11 @@
 use crate::cartridge::Mirroring;
 
+/// Note: a few attributes are marked with `pub` visiblity.
+/// This is because the emulator needs to intercept the program execution in order to properly draw the screen or because tests rely on them.
 pub struct DataRegister {
-    // I don't want this to be pub but I need it for tests right now, TODO
-    pub vram: [u8; 2048],    // internal memory, keeps palette tables
-    chr_rom: Vec<u8>,        // visuals of the game stored on the cartridge
-    palette_table: [u8; 32], // internal memory, keeps palette tables
+    pub vram: [u8; 2048],        // internal memory, keeps palette tables
+    pub chr_rom: Vec<u8>,        // visuals of the game stored on the cartridge
+    pub palette_table: [u8; 32], // internal memory, keeps palette tables
     mirroring: Mirroring,
     internal_data_buf: u8,
 }

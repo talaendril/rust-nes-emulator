@@ -114,7 +114,7 @@ impl Mem for Bus<'_> {
             | PPU_SCROLL_REGISTER
             | PPU_ADDR_REGISTER
             | PPU_DIRECT_MEMORY_ACCESS_REGISTER => {
-                panic!("Attempt to read from write-only PPU address {:x}", addr);
+                panic!("Attempt to read from write-only PPU address {:#06x}", addr);
             }
             PPU_STATUS_REGISTER => self.ppu.read_status_register(),
             PPU_OAM_DATA_REGISTER => self.ppu.read_oam_data_register(),
@@ -128,7 +128,7 @@ impl Mem for Bus<'_> {
             PRG_ROM..=PRG_ROM_END => self.read_prg_rom(addr),
 
             _ => {
-                println!("Ignoring mem access at {}", addr);
+                println!("Ignoring mem access at {:#06x}", addr);
                 0
             }
         }
@@ -148,9 +148,14 @@ impl Mem for Bus<'_> {
             PPU_SCROLL_REGISTER => self.ppu.write_to_scroll_register(data),
             PPU_ADDR_REGISTER => self.ppu.write_to_addr_register(data),
             PPU_DATA_REGISTER => self.ppu.write_to_data_register(data),
-            // TODO:
             PPU_DIRECT_MEMORY_ACCESS_REGISTER => {
-                println!("Ignoring mem write-access for OAM_DMA register")
+                let mut buffer: [u8; 256] = [0; 256];
+                let hi = (data as u16) << 8;
+                for i in 0..256u16 {
+                    buffer[i as usize] = self.mem_read(hi + i);
+                }
+
+                self.ppu.write_to_oam_dma_register(&buffer);
             }
             PPU_REGISTERS_MIRROR_START..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
@@ -158,7 +163,7 @@ impl Mem for Bus<'_> {
             }
             PRG_ROM..=PRG_ROM_END => panic!("Attempt to write to Cartridge ROM space"),
 
-            _ => println!("Ignoring mem write-access at {}", addr),
+            _ => println!("Ignoring mem write-access at {:#06x}", addr),
         }
     }
 }

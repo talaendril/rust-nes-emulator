@@ -66,4 +66,15 @@ impl ControlRegister {
             0x1000
         }
     }
+
+    pub fn get_sprite_pattern_addr(&self) -> u16 {
+        if !self
+            .status
+            .contains(ControlRegisterFlags::SPRITE_PATTERN_ADDR)
+        {
+            0
+        } else {
+            0x1000
+        }
+    }
 }

@@ -22,16 +22,16 @@ use self::registers::{
 
 /// Note: a few registers are marked with `pub` visiblity.
 /// This is because the emulator needs to intercept the program execution in order to properly draw the screen.
-/// It's not a perfect solution but it's a quick for right now to enable easy read access.
+/// TODO: It's not a perfect solution but it's a quick for right now to enable easy read access.
 pub struct NesPPU {
-    pub ctrl: ControlRegister,    // register at 0x2000, write-only
-    mask: MaskRegister,           // register at 0x2001, write-only
-    status: StatusRegister,       // register at 0x2002, read-only
-    oam_addr: OamAddressRegister, // register at 0x2003, write-only
-    oam_data: OamDataRegister,    // register at 0x2004, read and write
-    scroll: ScrollRegister,       // register at 0x2005, write-only => write called twice (16-bit)
-    addr: AddrRegister,           // register at 0x2006, write-only => write called twice (16-bit)
-    pub data: DataRegister,       // register at 0x2007, read and write
+    pub ctrl: ControlRegister,     // register at 0x2000, write-only
+    mask: MaskRegister,            // register at 0x2001, write-only
+    status: StatusRegister,        // register at 0x2002, read-only
+    oam_addr: OamAddressRegister,  // register at 0x2003, write-only
+    pub oam_data: OamDataRegister, // register at 0x2004, read and write
+    scroll: ScrollRegister,        // register at 0x2005, write-only => write called twice (16-bit)
+    addr: AddrRegister,            // register at 0x2006, write-only => write called twice (16-bit)
+    pub data: DataRegister,        // register at 0x2007, read and write
     scanline: u16,
     cycles: usize,
     nmi_interrupt: Option<u8>,
@@ -150,6 +150,19 @@ impl NesPPU {
         self.increment_vram_addr();
     }
 
+    /// This function is a bit of a cheat, it's usually part of the register at 0x4014 called OAM Direct Memory Access Register.
+    /// The actual OAM Data Register doesn't seem to be used by most games properly and they rather use this way to write data into memory.
+    /// Preferably I would like to extract this into its own file and struct but I need the [`OamDataRegister`] internal memory.
+    /// Currently only used for tests, so I moved it there, but I should think about where this is properly placed.
+    /// TODO: check if there might a "cleaner" way to implement this
+    pub fn write_to_oam_dma_register(&mut self, data: &[u8; 256]) {
+        for value in data.iter() {
+            let addr = self.oam_addr.get();
+            self.oam_data.write_data(addr, *value);
+            self.oam_addr.increment_addr();
+        }
+    }
+
     fn increment_vram_addr(&mut self) {
         self.addr
             .increment(self.ctrl.get_vram_addr_increment_value());
@@ -167,21 +180,6 @@ pub mod test {
 
         pub fn get_vram_at_address(&self, addr: u16) -> u8 {
             self.vram[addr as usize]
-        }
-    }
-
-    impl NesPPU {
-        /// This function is a bit of a cheat, it's usually part of the register at 0x4014 called OAM Direct Memory Access Register.
-        /// The actual OAM Data Register doesn't seem to be used by most games properly and they rather use this way to write data into memory.
-        /// Preferably I would like to extract this into its own file and struct but I need the [`OamDataRegister`] internal memory.
-        /// Currently only used for tests, so I moved it there, but I should think about where this is properly placed.
-        /// TODO: look at proper place, check if there might a "cleaner" way to implement this
-        pub fn write_to_oam_dma_register(&mut self, data: &[u8; 256]) {
-            for value in data.iter() {
-                let addr = self.oam_addr.get();
-                self.oam_data.write_data(addr, *value);
-                self.oam_addr.increment_addr();
-            }
         }
     }
 
